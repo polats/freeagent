@@ -79,8 +79,13 @@ if [ -d "$STATE_ROOT" ] && [ -w "$STATE_ROOT" ]; then
   export XDG_CACHE_HOME="$STATE_ROOT/cache"
   export COLLIE_STATE_DIR="$STATE_ROOT/collie/state"
   export HERDR_PLUGIN_CONFIG_DIR="$STATE_ROOT/collie/config"
+  # Agent homes too: this is where each agent keeps the login it does in its pane (Claude Code
+  # .credentials.json, Codex auth.json; OpenCode's auth.json is under XDG_DATA_HOME above). Both
+  # variables are honoured by the agents and by herdr's integration installer.
+  export CLAUDE_CONFIG_DIR="$STATE_ROOT/claude"
+  export CODEX_HOME="$STATE_ROOT/codex"
   WORKSPACE="${FREEAGENT_WORKSPACE:-$STATE_ROOT/workspace}"
-  log "persistence: $STATE_ROOT (herdr sessions, collie pairing and code survive restarts)"
+  log "persistence: $STATE_ROOT (herdr sessions, agent logins, collie pairing and code survive restarts)"
 else
   export XDG_CONFIG_HOME="$HOME/.config"
   export XDG_STATE_HOME="$HOME/.local/state"
@@ -88,9 +93,11 @@ else
   export XDG_CACHE_HOME="$HOME/.cache"
   export COLLIE_STATE_DIR="$HOME/.local/state/collie"
   export HERDR_PLUGIN_CONFIG_DIR="$HOME/.config/collie"
+  export CLAUDE_CONFIG_DIR="$HOME/.claude"
+  export CODEX_HOME="$HOME/.codex"
   WORKSPACE="${FREEAGENT_WORKSPACE:-$HOME/workspace}"
   log "persistence: NONE — $STATE_ROOT is not a writable mount."
-  log "             Sessions, pairings and uncommitted code are lost on restart."
+  log "             Sessions, agent logins, pairings and uncommitted code are lost on restart."
   log "             Push to git before you walk away, or attach a volume at $STATE_ROOT."
 fi
 
@@ -123,20 +130,43 @@ if [ "$XDG_CONFIG_HOME" != "$HOME/.config" ] && [ ! -L "$HOME/.config/opencode" 
   fi
   ln -s "$XDG_CONFIG_HOME/opencode" "$HOME/.config/opencode"
 fi
-mkdir -p "$HOME/.claude" "$HOME/.codex"
+# Seed the agent homes from what the build installed (hooks, settings) the first time they land
+# somewhere new; never overwrite, so a login already stored there survives an image upgrade.
+for pair in "$HOME/.claude:$CLAUDE_CONFIG_DIR" "$HOME/.codex:$CODEX_HOME"; do
+  src="${pair%%:*}"; dst="${pair##*:}"
+  mkdir -p "$dst"
+  if [ "$src" != "$dst" ] && [ -d "$src" ]; then
+    cp -rn "$src/." "$dst/" 2>/dev/null || true
+  fi
+done
 for agent in claude codex opencode; do
   herdr integration install "$agent" >/dev/null 2>&1 \
     || log "warning: herdr integration install $agent failed — $agent state will fall back to screen detection"
 done
 
-# --- agent credentials --------------------------------------------------------------------
-# Browser OAuth flows cannot complete inside a headless container; agents need keys or tokens.
+# --- agent sign-in -------------------------------------------------------------------------
+# The intended path is the same as on a laptop: launch the agent from the phone and sign in with
+# your own account inside its pane. Browser callbacks to localhost cannot reach a container, so
+# each agent's "paste the code" fallback is what runs here — Claude Code (/login, Claude
+# subscription), Codex (`codex login --device-auth`), OpenCode (`opencode auth login`, Anthropic
+# Claude Pro/Max) all have one. Collie autolinks the URL the agent prints, so it is one tap on
+# the phone, and the resulting credentials persist under the state root above. API keys still
+# work when set, for CI and for users who prefer them.
 have_cred=0
 for v in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY OPENCODE_API_KEY GEMINI_API_KEY; do
-  if [ -n "${!v:-}" ]; then have_cred=1; log "credentials: $v set"; fi
+  if [ -n "${!v:-}" ]; then have_cred=1; log "credentials: $v set (API key mode)"; fi
 done
-[ "$have_cred" = 1 ] || log "credentials: none set — agents will start but cannot call a model.
-             Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN (claude setup-token), OPENAI_API_KEY, OPENCODE_API_KEY."
+if [ "$have_cred" = 0 ]; then
+  signed=""
+  [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ] && signed="$signed claude"
+  [ -f "$CODEX_HOME/auth.json" ] && signed="$signed codex"
+  [ -f "$XDG_DATA_HOME/opencode/auth.json" ] && signed="$signed opencode"
+  if [ -n "$signed" ]; then
+    log "credentials: signed in:$signed (stored under the state root)"
+  else
+    log "credentials: none yet — launch an agent from the phone and sign in with your account in its pane."
+  fi
+fi
 
 # --- herdr -------------------------------------------------------------------------------
 # One explicit socket path, exported so herdr, its hooks inside panes, Collie and the pairing

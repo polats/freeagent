@@ -18,6 +18,21 @@ label = "Codex"
 command = "opencode"
 label = "OpenCode"
 
+# Sign-in rows. Each agent's no-browser fallback prints a URL (Collie makes it tappable) and takes
+# a pasted code back in the pane. Credentials persist under the state root, so this is a one-time
+# tap per agent per deployment.
+[[launchers]]
+command = "claude auth login"
+label = "Claude Code: sign in"
+
+[[launchers]]
+command = "codex login --device-auth"
+label = "Codex: sign in"
+
+[[launchers]]
+command = "opencode auth login"
+label = "OpenCode: sign in"
+
 [[launchers]]
 command = "bash"
 label = "Shell"

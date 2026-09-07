@@ -54,13 +54,8 @@ Phase 1 of the plan adds `COLLIE_AUTH_TOKEN` to Collie so the other two become v
 Code -> Codespaces -> Create codespace on main
 ```
 
-Give the agents a model first, as **Codespaces** user secrets (repository and Actions secrets are
-a different thing and are not visible inside):
-
-```bash
-gh secret set ANTHROPIC_API_KEY --app codespaces --repo polats/freeagent   # or CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`
-gh secret set OPENAI_API_KEY    --app codespaces --repo polats/freeagent
-```
+No secrets are needed. Each agent signs in with **your own account** from inside its pane, the
+same way it would on your laptop; see [Signing in](#signing-in).
 
 `postStartCommand` boots both servers on create and after every idle stop; the log is
 `/tmp/freeagent.log`. Open the forwarded port 7860 in the browser, install the PWA, then pair
@@ -74,13 +69,32 @@ State lives under `/workspaces/.freeagent-state` and survives a stop. A codespac
 30 minutes idle by default (240 maximum) and running agents stop with it; Herdr restores the
 layout and resumes Claude Code sessions it knows about on the next start.
 
+## Signing in
+
+Agents use your existing subscription, not API keys. A container has no browser, and OAuth
+callbacks to `localhost` cannot reach it, so each agent's no-browser fallback is what runs here.
+From the phone, tap the sign-in launcher for the agent, then:
+
+| Agent | Launcher runs | What happens |
+| --- | --- | --- |
+| Claude Code | `claude auth login` | Prints a sign-in URL. Tap it, log in to Claude, copy the code shown, paste it into the pane. |
+| Codex | `codex login --device-auth` | Prints a link and a one-time code. Open the link, sign in to ChatGPT, enter the code. |
+| OpenCode | `opencode auth login` | Pick the provider (Anthropic → Claude Pro/Max). Tap the URL, then paste the authorization code. |
+
+Collie autolinks URLs in pane output, so the link is one tap. Credentials persist under the
+state root (`$STATE_ROOT/claude`, `$STATE_ROOT/codex`, `$STATE_ROOT/share/opencode`) and
+survive restarts and idle stops, so this is once per agent per deployment.
+
+API keys still work as an override for CI or for users who prefer them: set `ANTHROPIC_API_KEY`
+or `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, `OPENCODE_API_KEY` as secrets and the agents
+skip the login.
+
 ## Run locally
 
 ```bash
 docker build -t freeagent-cloud .
 docker run --rm -p 7860:7860 \
   -e FREEAGENT_ALLOW_ANY_HOST=1 -e FREEAGENT_ACKNOWLEDGE_NO_AUTH=1 \
-  -e ANTHROPIC_API_KEY=... \
   -v freeagent-data:/data \
   freeagent-cloud
 ```
@@ -90,8 +104,8 @@ servers come up, the PWA is served, and a launcher row opens a pane; CI runs the
 
 ## Deploy on Hugging Face Spaces or Railway
 
-Same recipe as opencode-cloud: Docker Space or `railway up`, a `/data` volume for persistence,
-provider keys as secrets. Set `FREEAGENT_ACKNOWLEDGE_NO_AUTH=1` to confirm you have read
+Same recipe as opencode-cloud: Docker Space or `railway up`, a `/data` volume for persistence
+(without it every sign-in is lost on restart). Set `FREEAGENT_ACKNOWLEDGE_NO_AUTH=1` to confirm you have read
 [Status](#status). The public hostname is read from `SPACE_HOST` or `RAILWAY_PUBLIC_DOMAIN`;
 set `FREEAGENT_PUBLIC_HOST` if you front it with your own domain.
 
@@ -105,9 +119,9 @@ set `FREEAGENT_PUBLIC_HOST` if you front it with your own domain.
 | `FREEAGENT_ACKNOWLEDGE_NO_AUTH` | — | `1` to start on a platform whose URL is not authenticated. Not needed in a codespace. |
 | `FREEAGENT_STATE_ROOT` | `/data` | Writable mount for herdr state, collie state and the workspace. Codespaces sets `/workspaces/.freeagent-state`. |
 | `FREEAGENT_WORKSPACE` | `$STATE_ROOT/workspace` | Directory agents start in. |
-| `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` | — | Claude Code. Browser login does not work headless. |
-| `OPENAI_API_KEY` | — | Codex. |
-| `OPENCODE_API_KEY`, `GEMINI_API_KEY`, ... | — | OpenCode providers (models.dev env vars). |
+| `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` | — | Optional. Claude Code skips the in-pane sign-in. |
+| `OPENAI_API_KEY` | — | Optional. Codex skips the in-pane sign-in. |
+| `OPENCODE_API_KEY`, `GEMINI_API_KEY`, ... | — | Optional. OpenCode providers (models.dev env vars). |
 
 Any `COLLIE_*` variable Collie documents can be set too; the entrypoint only sets the ones the
 deployment shape requires. Collie's `launchers.toml` is seeded from `config/launchers.toml` into
@@ -120,8 +134,9 @@ Build args: `HERDR_VERSION` (+ its two sha256s), `COLLIE_REF`, `BUN_VERSION`,
 
 - **This is a remote shell.** Every Collie write route types keystrokes into a live terminal as
   the container user, and reads show whatever is on screen. Treat the URL as a root login.
-- **Provider OAuth flows don't work here.** They open a localhost callback inside the container.
-  Use API keys or `claude setup-token`.
+- **Sign-in tokens live in the container.** Whoever can reach the shell can read
+  `$STATE_ROOT/claude/.credentials.json`, `$STATE_ROOT/codex/auth.json` and OpenCode's `auth.json`.
+  That is the same exposure as a laptop, on a machine you reach over the network.
 - **Pair your phone.** Until one device is paired, writes need only same-origin. `freeagent-pair`.
 
 MIT. Herdr is © its authors under Apache-2.0; Collie is © its authors under MIT; this repo is
