@@ -1,0 +1,33 @@
+name: Deploy landing page
+
+# Deploys landing/ to the Vercel project `freeagent` (https://freeagent-navy.vercel.app) whenever it
+# changes on main. Uses a token rather than Vercel's GitHub app so nothing else in this repo is
+# ever built by Vercel. Secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
+
+on:
+  push:
+    branches: [main]
+    paths: ["landing/**", ".github/workflows/deploy-landing.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-landing
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Deploy to production
+        working-directory: landing
+        run: |
+          npx -y vercel@latest deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | tee deploy.log
+          url=$(grep -oE 'https://[a-z0-9.-]*vercel\.app' deploy.log | tail -1)
+          echo "Deployed $url — production alias https://freeagent-navy.vercel.app"

@@ -9,13 +9,13 @@ token in the URL fragment. The Collie PWA trades that for a device token before 
 
 1. Vercel → Add New Project → import `polats/freeagent`.
 2. **Root Directory: `landing`**. Framework preset: Other. No build command, no output directory.
-3. Deploy. Note the URL (e.g. `https://freeagent.vercel.app`).
+3. Deploy. Note the URL (e.g. `https://freeagent-navy.vercel.app`).
 
 ## Create the Hugging Face OAuth application
 
 1. huggingface.co → Settings → **Developer applications** → New.
 2. Redirect URI: the Vercel URL, with a trailing slash, exactly as the page will be served
-   (e.g. `https://freeagent.vercel.app/`). Add a second one for the preview or custom domain if
+   (e.g. `https://freeagent-navy.vercel.app/`). Add a second one for the preview or custom domain if
    you use them.
 3. Scopes: `openid`, `profile`, `manage-repos`.
 4. Copy the **client id** into `config.js` → `HF_CLIENT_ID`. There is no client secret in this flow.
