@@ -66,8 +66,9 @@ gh secret set HF_TOKEN --repo OWNER/REPO            # a Hugging Face write token
 gh variable set HF_SPACE --repo OWNER/REPO --body "hfuser/freeagent"
 ```
 
-`landing/` is the static page that duplicates the template into a visitor's own account, on
-Vercel. See [`landing/README.md`](landing/README.md).
+`landing/` is the static page at https://freeagent.cosmiclabs.org (Cloudflare Pages) that creates a
+visitor's box — a GitHub Codespace by default, or a duplicate of the template Space. See
+[`landing/README.md`](landing/README.md).
 
 ## Run as a GitHub Codespace
 

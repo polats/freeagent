@@ -1,8 +1,8 @@
 name: Deploy landing page
 
-# Deploys landing/ to the Vercel project `freeagent` (https://freeagent-navy.vercel.app) whenever it
-# changes on main. Uses a token rather than Vercel's GitHub app so nothing else in this repo is
-# ever built by Vercel. Secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
+# Deploys landing/ to the Cloudflare Pages project `freeagent` (https://freeagent.cosmiclabs.org)
+# whenever it changes on main. Secrets: CLOUDFLARE_API_TOKEN (Pages: Edit + Workers Scripts: Edit),
+# CLOUDFLARE_ACCOUNT_ID. The GitHub OAuth secrets live on the Pages project, not here.
 
 on:
   push:
@@ -17,17 +17,14 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Deploy to production
+      - name: Deploy to Cloudflare Pages
         working-directory: landing
-        run: |
-          npx -y vercel@latest deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>&1 | tee deploy.log
-          url=$(grep -oE 'https://[a-z0-9.-]*vercel\.app' deploy.log | tail -1)
-          echo "Deployed $url — production alias https://freeagent-navy.vercel.app"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx -y wrangler@latest pages deploy public --project-name freeagent --branch main --commit-dirty=true

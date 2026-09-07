@@ -1,0 +1,7 @@
+# Cloudflare Pages project for the landing page. Static files in public/, Functions in functions/.
+#   npx wrangler pages deploy public --project-name freeagent
+# Secrets (Pages → Settings → Variables and Secrets, or `wrangler pages secret put`):
+#   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET   — the GitHub OAuth App for "Continue with GitHub"
+name = "freeagent"
+pages_build_output_dir = "public"
+compatibility_date = "2026-09-01"

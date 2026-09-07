@@ -22,22 +22,36 @@ PKCE from the browser), duplicates the `polats/freeagent` template Space into th
 a fresh `COLLIE_AUTH_TOKEN` secret, waits for it to run, and redirects to the new box with the
 token in the URL fragment. The Collie PWA trades that for a device token before it renders.
 
+## Layout
+
+```
+public/      the page: index.html, app.js, config.js, _headers (CSP)
+functions/   Cloudflare Pages Functions: /api/auth/github/{config,token}
+wrangler.toml
+```
+
 ## Two front doors, one set of files
 
-| Where | URL | OAuth client |
+| Where | URL | Sign-in |
 | --- | --- | --- |
-| Hugging Face static Space (primary) | https://polats-freeagent-landing.static.hf.space | provisioned by `hf_oauth: true` in this README's front matter; injected as `window.huggingface.variables` |
-| Vercel (custom-domain home later) | https://freeagent-navy.vercel.app | manual app in HF settings, id in `config.js` |
+| Cloudflare Pages (primary) | https://freeagent.cosmiclabs.org | GitHub → Codespace (default; needs the two Pages secrets below), Hugging Face → Space (needs an HF OAuth app for this host, id in `config.js`) |
+| Hugging Face static Space | https://polats-freeagent-landing.static.hf.space | Hugging Face only; the client is provisioned by `hf_oauth: true` in this README's front matter |
 
-`.github/workflows/sync-landing-space.yml` publishes this directory to the Space
-`polats/freeagent-landing` on every push that touches `landing/` (gated on the repo variable
-`HF_LANDING_SPACE`; uses the `HF_TOKEN` secret).
+`.github/workflows/deploy-landing.yml` deploys to Pages on every push that touches `landing/`
+(secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`). `.github/workflows/sync-landing-space.yml`
+publishes `public/` + this README to the Space (`HF_TOKEN`, var `HF_LANDING_SPACE`).
 
-## Deploy on Vercel
+## GitHub sign-in (Codespaces)
 
-1. Vercel → Add New Project → import `polats/freeagent`.
-2. **Root Directory: `landing`**. Framework preset: Other. No build command, no output directory.
-3. Deploy. Note the URL (e.g. `https://freeagent-navy.vercel.app`).
+GitHub's OAuth token endpoint has no CORS and needs the app secret, so the exchange runs in
+`functions/api/auth/github/token.js`. It stores nothing. Configure once:
+
+1. GitHub → Settings → Developer settings → OAuth Apps → New. Callback URL
+   `https://freeagent.cosmiclabs.org/`.
+2. `wrangler pages secret put GITHUB_CLIENT_ID --project-name freeagent` and the same for
+   `GITHUB_CLIENT_SECRET`.
+
+The page shows "Continue with GitHub" only where `/api/auth/github/config` answers.
 
 ## Create the Hugging Face OAuth application
 
@@ -56,5 +70,5 @@ Any static server works, but the OAuth redirect must match a registered URI, so 
 `http://localhost:3000/` to the application's redirect URIs for local testing:
 
 ```bash
-npx serve landing -l 3000
+cd landing && npx wrangler pages dev public
 ```

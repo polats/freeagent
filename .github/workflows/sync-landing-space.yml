@@ -52,7 +52,7 @@ jobs:
           # The Space gets ONLY the landing directory, as a fresh single-commit history: it is a
           # publish target, not a mirror. The README's front matter is what configures the Space.
           rm -rf /tmp/space && mkdir /tmp/space
-          rsync -a --exclude '.vercel' --exclude '.gitignore' --exclude '.env*' landing/ /tmp/space/
+          rsync -a landing/public/ /tmp/space/ && cp landing/README.md /tmp/space/README.md
           cd /tmp/space
           git init -q -b main
           git -c user.name=github-actions -c user.email=actions@github.com add -A
