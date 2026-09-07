@@ -46,24 +46,32 @@ else
 fi
 
 # --- refuse to run unprotected -------------------------------------------------------------
-# Phase 0 status: Collie's first factor is still Tailscale or a reverse proxy, neither of which
-# exists on a public PaaS URL. Its device pairing gates WRITES once a device is paired, but reads
-# (agent output, source, secrets on screen) are open to anyone who can reach the port.
-#
-# A Codespace forwards ports privately: every request must carry the owner's GitHub identity
-# (browser session or X-Github-Token), so that is the one platform that is safe as-is.
-# Everywhere else, refuse unless the operator says they understand. Phase 1 of PLAN.md replaces
-# this with COLLIE_AUTH_TOKEN.
-if [ "${CODESPACES:-}" != "true" ] && [ "${FREEAGENT_ACKNOWLEDGE_NO_AUTH:-0}" != "1" ]; then
-  die "no authentication in front of Collie on this platform.
+# Collie's first factor here is COLLIE_AUTH_TOKEN (its "Variant F"): every /api route, reads
+# included, needs the token or a paired device's token; static assets and /api/health stay open.
+# On a public URL (Hugging Face, Railway) that token is the only thing between the internet and a
+# shell, so refuse to start without one. A Codespace forwards its port privately — every request
+# already carries the owner's GitHub identity — so there the token is optional (and still honoured).
+if [ -z "${COLLIE_AUTH_TOKEN:-}" ]; then
+  if [ "${CODESPACES:-}" = "true" ]; then
+    log "auth: no COLLIE_AUTH_TOKEN — relying on the codespace's private port (GitHub identity) alone"
+  else
+    die "COLLIE_AUTH_TOKEN is not set.
 
-  This image (Phase 0) has no first-factor auth of its own. On a public URL anyone who can
-  reach it can read every agent's screen, and until a device is paired, type into it.
-  Codespaces are exempt because their forwarded ports are private to the GitHub account.
+  Every Collie route can type into a shell on this container. On a public URL the token is the
+  only thing in front of that, so this image refuses to start without one. Generate 24+ random
+  characters (e.g. openssl rand -base64 32), set it as a secret on the platform, and redeploy:
 
-  Set FREEAGENT_ACKNOWLEDGE_NO_AUTH=1 to start anyway (local docker run, or a URL you have
-  otherwise protected). Then pair your phone immediately: freeagent-pair"
+    Hugging Face  Settings -> Variables and secrets -> New secret
+    Railway       Variables -> New Variable
+
+  Then open the URL with #token=<the token> once, or pair with: freeagent-pair"
+  fi
+elif [ "${#COLLIE_AUTH_TOKEN}" -lt 24 ]; then
+  log "auth: WARNING — COLLIE_AUTH_TOKEN is only ${#COLLIE_AUTH_TOKEN} characters; use 24 or more"
+else
+  log "auth: COLLIE_AUTH_TOKEN set (${#COLLIE_AUTH_TOKEN} chars) — every /api route requires it or a paired device"
 fi
+export COLLIE_AUTH_TOKEN="${COLLIE_AUTH_TOKEN:-}"
 
 # --- persistence -------------------------------------------------------------------------
 # Herdr keeps config and session state under the XDG dirs; Collie keeps pairing, uploads, audit
@@ -183,6 +191,27 @@ done
 herdr api snapshot >/dev/null 2>&1 || die "herdr server did not answer on $HERDR_SOCKET_PATH within 30s"
 log "herdr: ready"
 
+# --- web push keys ---------------------------------------------------------------------------
+# Collie's push is standard Web Push with per-install VAPID keys. Generate them once into the state
+# dir so notifications work from the first boot and survive restarts; an operator-supplied pair
+# in the environment wins. Needs the optional `web-push` dependency Collie installs at build time.
+if [ -z "${COLLIE_VAPID_PUBLIC:-}" ] && [ -z "${COLLIE_VAPID_PRIVATE:-}" ]; then
+  VAPID_FILE="$COLLIE_STATE_DIR/vapid.json"
+  if [ ! -f "$VAPID_FILE" ]; then
+    if ( cd /opt/collie && bun -e 'const w=require("web-push");process.stdout.write(JSON.stringify(w.generateVAPIDKeys()))' > "$VAPID_FILE.tmp" 2>/dev/null ); then
+      mv "$VAPID_FILE.tmp" "$VAPID_FILE"; chmod 600 "$VAPID_FILE"
+      log "push: generated VAPID keys into $VAPID_FILE"
+    else
+      rm -f "$VAPID_FILE.tmp"; log "push: could not generate VAPID keys (web-push missing?) — push disabled"
+    fi
+  fi
+  if [ -f "$VAPID_FILE" ]; then
+    export COLLIE_VAPID_PUBLIC="$(jq -r .publicKey "$VAPID_FILE")"
+    export COLLIE_VAPID_PRIVATE="$(jq -r .privateKey "$VAPID_FILE")"
+    export COLLIE_VAPID_SUBJECT="${COLLIE_VAPID_SUBJECT:-https://${PUBLIC_HOST:-localhost}}"
+  fi
+fi
+
 # --- collie ------------------------------------------------------------------------------
 # Variant "public PaaS": no tailscale serve, bind every interface, Host/Origin pinned above.
 export COLLIE_MUX=herdr
@@ -196,7 +225,7 @@ export COLLIE_TRUSTED_USER_OPTIONAL=1
 {
   for v in HERDR_SOCKET_PATH XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME XDG_CACHE_HOME \
            COLLIE_STATE_DIR HERDR_PLUGIN_CONFIG_DIR COLLIE_MUX COLLIE_HOST COLLIE_PORT \
-           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST; do
+           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST COLLIE_AUTH_TOKEN; do
     [ -n "${!v:-}" ] && printf 'export %s=%q\n' "$v" "${!v}"
   done
 } > /tmp/freeagent.env

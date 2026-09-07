@@ -36,17 +36,24 @@ herdr server   (headless; owns the PTYs)
 
 ## Status
 
-**Phase 0: works only where the platform authenticates the URL.** Collie's own first factor is
-Tailscale or a reverse proxy, neither of which exists on a PaaS. Device pairing gates writes
-once a phone is paired, but reads are open to anyone who can reach the port.
+Phase 1 of `freeagent/PLAN.md`. Collie's fork adds **cloud auth**: `COLLIE_AUTH_TOKEN` is a bearer
+secret that every `/api` route requires, reads included, unless the caller is a paired device.
+Static assets and `/api/health` stay open. The entrypoint refuses to start without the token on
+any platform whose URL is public.
 
-| Platform | Safe today? | Why |
+| Platform | Auth | Notes |
 | --- | --- | --- |
-| GitHub Codespaces | **yes** | The forwarded port is private: every request needs the owner's GitHub identity (browser session or `X-Github-Token`). `devcontainer.json` pins it private. |
-| Hugging Face Spaces | no | Public URL. The entrypoint refuses to start unless `FREEAGENT_ACKNOWLEDGE_NO_AUTH=1`. |
-| Railway | no | Same. |
+| GitHub Codespaces | private port (GitHub identity), token optional | `devcontainer.json` pins the port private; set the token too if you want pairing bootstrap via URL. |
+| Hugging Face Spaces | `COLLIE_AUTH_TOKEN` required | Set it in the creation request or as a Space secret before first boot. |
+| Railway | `COLLIE_AUTH_TOKEN` required | Set it as a service variable. |
 
-Phase 1 of the plan adds `COLLIE_AUTH_TOKEN` to Collie so the other two become viable.
+The token is a root credential to a shell. Generate 24+ random characters
+(`openssl rand -base64 32`), keep it in the platform's secret store, rotate by redeploying.
+
+**Getting a phone in.** Open `https://<host>/#token=<the token>` once. The PWA trades the secret
+for a device token of its own before it renders, stores that, and strips the fragment from the URL.
+The device then appears under Settings like any paired phone and can be revoked on its own. The
+code-based `freeagent-pair` path still works too.
 
 ## Run as a GitHub Codespace
 
@@ -93,20 +100,21 @@ skip the login.
 
 ```bash
 docker build -t freeagent-cloud .
+TOKEN=$(openssl rand -base64 32)
 docker run --rm -p 7860:7860 \
-  -e FREEAGENT_ALLOW_ANY_HOST=1 -e FREEAGENT_ACKNOWLEDGE_NO_AUTH=1 \
+  -e FREEAGENT_ALLOW_ANY_HOST=1 -e COLLIE_AUTH_TOKEN="$TOKEN" \
   -v freeagent-data:/data \
   freeagent-cloud
 ```
 
-Then open `http://localhost:7860`. `scripts/smoke.sh` builds the image and checks that both
+Then open `http://localhost:7860/#token=$TOKEN`. `scripts/smoke.sh` builds the image and checks that both
 servers come up, the PWA is served, and a launcher row opens a pane; CI runs the same script.
 
 ## Deploy on Hugging Face Spaces or Railway
 
 Same recipe as opencode-cloud: Docker Space or `railway up`, a `/data` volume for persistence
-(without it every sign-in is lost on restart). Set `FREEAGENT_ACKNOWLEDGE_NO_AUTH=1` to confirm you have read
-[Status](#status). The public hostname is read from `SPACE_HOST` or `RAILWAY_PUBLIC_DOMAIN`;
+(without it every sign-in is lost on restart), and `COLLIE_AUTH_TOKEN` as a secret **before first
+boot** (on Hugging Face, in the Space creation request; see [Status](#status)). The public hostname is read from `SPACE_HOST` or `RAILWAY_PUBLIC_DOMAIN`;
 set `FREEAGENT_PUBLIC_HOST` if you front it with your own domain.
 
 ## Environment variables
@@ -116,7 +124,8 @@ set `FREEAGENT_PUBLIC_HOST` if you front it with your own domain.
 | `PORT` | `7860` | Listen port. Railway sets it; HF must match `app_port`. |
 | `FREEAGENT_PUBLIC_HOST` | platform-derived | Hostname Collie is served on. Derived from `SPACE_HOST`, `RAILWAY_PUBLIC_DOMAIN`, or `CODESPACE_NAME` + `GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN`. |
 | `FREEAGENT_ALLOW_ANY_HOST` | — | `1` to skip Host validation (local docker only). |
-| `FREEAGENT_ACKNOWLEDGE_NO_AUTH` | — | `1` to start on a platform whose URL is not authenticated. Not needed in a codespace. |
+| `COLLIE_AUTH_TOKEN` | — | **Required off-Codespaces.** Root bearer secret; every `/api` route needs it or a paired device's token. |
+| `COLLIE_VAPID_PUBLIC` / `COLLIE_VAPID_PRIVATE` | generated | Web Push keys. Generated into the state root on first boot when unset. |
 | `FREEAGENT_STATE_ROOT` | `/data` | Writable mount for herdr state, collie state and the workspace. Codespaces sets `/workspaces/.freeagent-state`. |
 | `FREEAGENT_WORKSPACE` | `$STATE_ROOT/workspace` | Directory agents start in. |
 | `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` | — | Optional. Claude Code skips the in-pane sign-in. |
@@ -137,7 +146,8 @@ Build args: `HERDR_VERSION` (+ its two sha256s), `COLLIE_REF`, `BUN_VERSION`,
 - **Sign-in tokens live in the container.** Whoever can reach the shell can read
   `$STATE_ROOT/claude/.credentials.json`, `$STATE_ROOT/codex/auth.json` and OpenCode's `auth.json`.
   That is the same exposure as a laptop, on a machine you reach over the network.
-- **Pair your phone.** Until one device is paired, writes need only same-origin. `freeagent-pair`.
+- **The token is the door.** Anyone holding `COLLIE_AUTH_TOKEN` has the shell. Hand it to a phone
+  once via `#token=`, then rely on the device token it minted; rotate the root token by redeploying.
 
 MIT. Herdr is © its authors under Apache-2.0; Collie is © its authors under MIT; this repo is
 deployment wrapper code.

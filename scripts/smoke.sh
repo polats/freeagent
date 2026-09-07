@@ -18,9 +18,18 @@ trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; echo "--- container log ---" >&2; docker logs "$NAME" >&2 || true; exit 1; }
 
-echo "== refuses to start on an unknown public host without acknowledgement"
-if docker run --rm --name "$NAME" "$IMAGE"; then
-  echo "FAIL: container started with no public host and no acknowledgement" >&2; exit 1
+TOKEN="ci-token-$(date +%s)-0123456789abcdef"
+
+echo "== refuses to start without COLLIE_AUTH_TOKEN off-Codespaces"
+if docker run --rm --name "$NAME" -e FREEAGENT_ALLOW_ANY_HOST=1 "$IMAGE"; then
+  echo "FAIL: container started with no COLLIE_AUTH_TOKEN" >&2; exit 1
+fi
+cleanup
+echo "OK"
+
+echo "== refuses to start on an unknown public host"
+if docker run --rm --name "$NAME" -e COLLIE_AUTH_TOKEN="$TOKEN" "$IMAGE"; then
+  echo "FAIL: container started with no public host" >&2; exit 1
 fi
 cleanup
 echo "OK"
@@ -33,9 +42,10 @@ echo "== herdr integrations were installed at build time"
 docker run --rm "$IMAGE" bash -c 'test -f ~/.claude/settings.json && grep -q herdr ~/.claude/settings.json' || fail "claude hooks not installed"
 echo "OK"
 
-echo "== boots and serves the API and the PWA"
+echo "== boots with the token and serves the API and the PWA"
 docker run -d --name "$NAME" -p "$PORT:7860" \
-  -e FREEAGENT_ALLOW_ANY_HOST=1 -e FREEAGENT_ACKNOWLEDGE_NO_AUTH=1 "$IMAGE" >/dev/null
+  -e FREEAGENT_ALLOW_ANY_HOST=1 -e COLLIE_AUTH_TOKEN="$TOKEN" "$IMAGE" >/dev/null
+AUTH="Authorization: Bearer $TOKEN"
 
 code=""
 for _ in $(seq 1 60); do
@@ -46,9 +56,21 @@ done
 [ "$code" = "200" ] || fail "/api/health never returned 200 (last: ${code:-none})"
 echo "OK: /api/health 200"
 
-snap=$(curl -s -m 10 -H "Origin: http://127.0.0.1:$PORT" "http://127.0.0.1:$PORT/api/snapshot") || fail "/api/snapshot request failed"
+code=$(curl -s -m 10 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/api/snapshot")
+[ "$code" = "403" ] || fail "/api/snapshot without a credential returned $code, expected 403"
+echo "OK: /api/snapshot refuses an uncredentialed read (403)"
+snap=$(curl -s -m 10 -H "$AUTH" "http://127.0.0.1:$PORT/api/snapshot") || fail "/api/snapshot request failed"
 echo "$snap" | jq -e . >/dev/null 2>&1 || fail "/api/snapshot is not JSON: $snap"
-echo "OK: /api/snapshot is JSON ($(echo "$snap" | wc -c) bytes)"
+echo "OK: /api/snapshot with the token is JSON ($(echo "$snap" | wc -c) bytes)"
+
+echo "== the token mints a device token, which then reads on its own"
+dev=$(curl -s -m 10 -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{"label":"ci phone"}' "http://127.0.0.1:$PORT/api/pair/token") || fail "/api/pair/token request failed"
+devtok=$(echo "$dev" | jq -r '.token // empty'); [ -n "$devtok" ] || fail "/api/pair/token returned: $dev"
+code=$(curl -s -m 10 -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $devtok" "http://127.0.0.1:$PORT/api/snapshot")
+[ "$code" = "200" ] || fail "paired device read returned $code"
+code=$(curl -s -m 10 -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -d '{"label":"x"}' "http://127.0.0.1:$PORT/api/pair/token")
+[ "$code" = "403" ] || fail "/api/pair/token without the root token returned $code, expected 403"
+echo "OK"
 
 curl -s -m 10 "http://127.0.0.1:$PORT/" | grep -q "<title>" || fail "PWA not served on /"
 echo "OK: PWA served on /"
@@ -58,7 +80,7 @@ docker exec "$NAME" bash -c 'source /tmp/freeagent.env && herdr api snapshot' >/
 echo "OK"
 
 echo "== a launcher row opens a pane"
-resp=$(curl -s -m 30 -X POST -H "Content-Type: application/json" -H "Origin: http://127.0.0.1:$PORT" \
+resp=$(curl -s -m 30 -X POST -H "Content-Type: application/json" -H "$AUTH" \
   -d '{"command":"bash"}' -w '\n%{http_code}' "http://127.0.0.1:$PORT/api/launch") || fail "/api/launch request failed"
 status=${resp##*$'\n'}; body=${resp%$'\n'*}
 echo "launch -> HTTP $status: $body"
