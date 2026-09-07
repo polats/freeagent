@@ -1,15 +1,19 @@
-// Landing-page configuration. Everything here is public by nature: a PKCE client id, a template
-// Space id, a repo link. There is no secret anywhere on this page — that is the point of it.
+// Landing-page configuration. Everything here is public by nature: template ids, a repo link, a
+// PKCE client id. There is no secret anywhere on this page — that is the point of it. The GitHub
+// OAuth client id and secret live in Cloudflare Pages secrets, read by functions/api/auth/github.
 window.FREEAGENT = {
-  // The Hugging Face OAuth application (huggingface.co/settings/applications → New application).
-  // Redirect URI = this page's own URL (e.g. https://freeagent-navy.vercel.app/). Scopes below.
+  // GitHub Codespaces (default where available): the repo the codespace is created from.
+  TEMPLATE_REPO: "polats/freeagent",
+  CODESPACE_MACHINE: "basicLinux32gb",
+  CODESPACE_IDLE_MINUTES: 60,
+  CODESPACES_PORT_DOMAIN: "app.github.dev",
+  // Hugging Face: the public template Space this page duplicates.
+  TEMPLATE_SPACE: "polats/freeagent",
+  // HF OAuth client id for NON-Space hosts (Cloudflare Pages, Vercel): huggingface.co → Settings →
+  // Developer applications → New; redirect URI = that host's URL with a trailing slash. On the
+  // Hugging Face static Space this is ignored — the platform injects its own (hf_oauth: true).
   HF_CLIENT_ID: "REPLACE_WITH_HF_OAUTH_CLIENT_ID",
   HF_SCOPES: "openid profile manage-repos",
-  // The public template Space this page duplicates. Published by .github/workflows/sync-to-hf-space.yml.
-  TEMPLATE_SPACE: "polats/freeagent",
-  // Default name for the user's copy; they can change it.
   DEFAULT_NAME: "freeagent",
-  // Zero-infra fallback for people who would rather have a codespace.
-  CODESPACES_URL: "https://codespaces.new/polats/freeagent?quickstart=1",
   REPO_URL: "https://github.com/polats/freeagent",
 };

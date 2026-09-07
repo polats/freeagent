@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>freeagent</title>
-<meta name="description" content="Run Claude Code, Codex and OpenCode on a box you own and drive them from your phone.">
+<meta name="description" content="Run Claude Code, Codex and OpenCode on a box you own — a GitHub Codespace or a Hugging Face Space — and drive them from your phone.">
 <meta name="color-scheme" content="dark light">
 <style>
   :root{--bg:#0f1115;--fg:#e8e8ec;--muted:#a3a8b3;--card:#171a21;--line:#262a33;--accent:#ffd21e;--accent-fg:#1a1a1a;--danger:#ff6b6b}
@@ -37,15 +37,15 @@
   <div class="card">
     <section data-step="start">
       <h1>Your coding agents, on a box you own, from your phone.</h1>
-      <p class="lead">Claude Code, Codex and OpenCode running on your own Hugging Face Space, with a phone UI that shows you which agent needs you and lets you answer with a tap.</p>
+      <p class="lead">Claude Code, Codex and OpenCode running on a machine in your own account, with a phone UI that shows you which agent needs you and lets you answer with a tap.</p>
       <ol>
-        <li>Sign in with Hugging Face.</li>
-        <li>We duplicate the freeagent template into your account.</li>
-        <li>You land in your box. Sign in to your agents with your own subscriptions.</li>
+        <li>Sign in with GitHub or Hugging Face.</li>
+        <li>We create a box for you: a Codespace, or a duplicate of the freeagent Space.</li>
+        <li>You land in it. Sign in to your agents with your own subscriptions.</li>
       </ol>
-      <p>Free CPU tier. Nothing is stored anywhere but your Space and your phone.</p>
-      <button id="start" class="primary">Sign in with Hugging Face</button>
-      <a id="codespaces-link" class="btn ghost" href="#">Use a GitHub Codespace instead</a>
+      <p>Free tiers on both. Nothing is stored anywhere but your box and your phone.</p>
+      <button id="start-github" class="primary" hidden>Continue with GitHub</button>
+      <button id="start-hf" class="ghost" hidden>Continue with Hugging Face</button>
     </section>
 
     <section data-step="signing-in" hidden>
@@ -56,10 +56,11 @@
     <section data-step="name" hidden>
       <h2>Hi <span id="who"></span>. Name your box.</h2>
       <form id="name-form">
-        <label for="name-input">Space name</label>
-        <input id="name-input" autocomplete="off" spellcheck="false" maxlength="96">
+        <label for="name-input" id="name-label">Name</label>
+        <input id="name-input" autocomplete="off" spellcheck="false" maxlength="48">
         <p class="err" id="name-error"></p>
-        <p>Public Space on free cpu-basic hardware. Collie's token is the door, not the Space's visibility. It sleeps after two idle days and wakes on the next visit.</p>
+        <p id="name-hint-github" hidden>A 2-core codespace on your GitHub account. It stops after an hour idle and restarts on your next visit with everything kept; the free plan includes 120 core-hours a month. Its port is private to you.</p>
+        <p id="name-hint-hf" hidden>A public Space on free cpu-basic hardware. Collie's token is the door, not the Space's visibility. It sleeps after two idle days and wakes on the next visit; without paid storage a restart forgets sign-ins.</p>
         <button type="submit" class="primary">Create my box</button>
       </form>
     </section>
@@ -73,12 +74,14 @@
 
     <section data-step="done" hidden>
       <h2>Your box is running.</h2>
-      <p>Opening it now. Add it to your home screen when Collie offers, then tap a launcher to start an agent.</p>
+      <p id="done-note"></p>
       <a id="open-link" class="btn primary" href="#">Open my box</a>
-      <p>Space: <a id="space-link" href="#"></a></p>
-      <p>Root token, shown once. Your phone trades it for its own device token on first open. Keep a copy if you want to add another device later without ssh:</p>
-      <p><code id="token-text"></code></p>
-      <button id="copy-token" class="ghost">Copy token</button>
+      <p>Box: <a id="resource-link" href="#"></a></p>
+      <div id="token-block" hidden>
+        <p>Root token, shown once. Your phone trades it for its own device token on first open. Keep a copy if you want to add another device later without ssh:</p>
+        <p><code id="token-text"></code></p>
+        <button id="copy-token" class="ghost">Copy token</button>
+      </div>
     </section>
 
     <section data-step="error" hidden>

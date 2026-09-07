@@ -1,22 +1,30 @@
-// freeagent landing page: sign in with Hugging Face (OAuth + PKCE, no backend), duplicate the
-// template Space into the user's account with a fresh Collie root token as a creation-time secret,
-// wait for it to run, and hand the phone off to it with the token in the URL fragment — which the
-// Collie PWA trades for a device token of its own before it renders (Collie → Variant F).
+// freeagent landing page. Two ways to get a box, both without any backend of ours holding state:
 //
-// Nothing leaves the browser except calls to huggingface.co. The access token lives in
-// sessionStorage for the length of the flow and is dropped at the end.
+//   GitHub → a Codespace  (default)  Sign in with GitHub, create a codespace from the freeagent
+//                                    repo, wait until it is Available, open its forwarded port.
+//                                    The port is private to the GitHub account, so that IS the
+//                                    auth; no token to hand over. Needs one Pages Function to swap
+//                                    the OAuth code for a token (GitHub's token endpoint has no
+//                                    CORS and needs the app secret) — see functions/api/auth/github.
+//   Hugging Face → a Space           Sign in with HF (PKCE, in the browser), duplicate the template
+//                                    Space with a fresh COLLIE_AUTH_TOKEN secret, wait for RUNNING,
+//                                    open it with #token= for Collie to consume.
+//
+// GitHub is offered only where /api/auth/github/config answers (Cloudflare Pages with the client id
+// set); on the HF static Space or plain static hosts the page shows Hugging Face alone.
 
 const CFG = window.FREEAGENT;
 const HF = "https://huggingface.co";
-// On a Hugging Face static Space with `hf_oauth: true`, the platform injects the OAuth app it
-// provisioned for this exact host as `window.huggingface.variables` — no app to create by hand,
-// and the redirect URI cannot drift from the deployed URL. Elsewhere (Vercel, a custom domain)
-// config.js supplies a client id registered for that origin.
-const SPACE_VARS = window.huggingface?.variables ?? {};
-const CLIENT_ID = SPACE_VARS.OAUTH_CLIENT_ID || CFG.HF_CLIENT_ID;
-const SCOPES = SPACE_VARS.OAUTH_SCOPES || CFG.HF_SCOPES;
-const EMBEDDED = window.top !== window.self;
+const GH_API = "https://api.github.com";
 const S = window.sessionStorage;
+
+// On a Hugging Face static Space with `hf_oauth: true`, the platform injects the OAuth app it
+// provisioned for this exact host as `window.huggingface.variables`. Elsewhere config.js supplies
+// a client id registered for that origin.
+const SPACE_VARS = window.huggingface?.variables ?? {};
+const HF_CLIENT_ID = SPACE_VARS.OAUTH_CLIENT_ID || CFG.HF_CLIENT_ID;
+const HF_SCOPES = SPACE_VARS.OAUTH_SCOPES || CFG.HF_SCOPES;
+const EMBEDDED = window.top !== window.self;
 
 const $ = (id) => document.getElementById(id);
 const show = (id) => {
@@ -26,34 +34,156 @@ const fail = (message) => {
   $("error-text").textContent = message;
   show("error");
 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const redirectUri = () => location.origin + location.pathname;
 
-// ---- PKCE ------------------------------------------------------------------------------------
+// ---- crypto helpers ----------------------------------------------------------------------------
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const random = (n) => b64url(crypto.getRandomValues(new Uint8Array(n)));
 async function sha256(text) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
 }
 
-async function startSignIn() {
-  if (!CLIENT_ID || CLIENT_ID.startsWith("REPLACE")) {
-    fail("This page is not configured yet: no OAuth client id (config.js HF_CLIENT_ID, or hf_oauth on the Space).");
-    return;
+// ---- GitHub: sign in -----------------------------------------------------------------------------
+async function githubAvailable() {
+  try {
+    const res = await fetch("/api/auth/github/config", { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return typeof json.client_id === "string" && json.client_id ? json.client_id : null;
+  } catch {
+    return null;
   }
-  if (EMBEDDED) {
-    // Inside huggingface.co's Space iframe the sign-in cookies do not survive the round trip on
-    // some browsers (the Spaces OAuth docs say so). Break out to the direct host instead.
-    window.open(location.href, "_blank", "noopener");
+}
+
+function startGitHub(clientId) {
+  const state = random(16);
+  S.setItem("oauth", JSON.stringify({ provider: "github", state }));
+  const url = new URL("https://github.com/login/oauth/authorize");
+  url.search = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri(),
+    scope: "codespace",
+    state,
+  }).toString();
+  location.assign(url.toString());
+}
+
+async function finishGitHub(params, saved) {
+  if (saved.state !== params.get("state")) throw new Error("Sign-in state mismatch. Please start again.");
+  const res = await fetch("/api/auth/github/token", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: params.get("code"), redirect_uri: redirectUri() }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`GitHub refused the sign-in: ${body.error_description || body.error || res.status}`);
+  if (!/\bcodespace\b/.test(body.scope ?? "codespace")) throw new Error("GitHub did not grant the codespace permission. Please start again and allow it.");
+  S.setItem("gh_token", body.access_token);
+  S.setItem("provider", "github");
+  history.replaceState(null, "", redirectUri());
+}
+
+async function gh(path, init = {}) {
+  const res = await fetch(`${GH_API}${path}`, {
+    ...init,
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${S.getItem("gh_token")}`,
+      "x-github-api-version": "2022-11-28",
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...init.headers,
+    },
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+  if (!res.ok) {
+    const err = new Error(json?.message ?? text ?? `HTTP ${res.status}`);
+    err.status = res.status;
+    err.body = json;
+    throw err;
+  }
+  return json;
+}
+
+// ---- GitHub: create the codespace ---------------------------------------------------------------
+async function createCodespace(name) {
+  show("creating");
+  $("creating-text").textContent = "Creating your codespace…";
+  const repo = await gh(`/repos/${CFG.TEMPLATE_REPO}`);
+  let cs;
+  try {
+    cs = await gh("/user/codespaces", {
+      method: "POST",
+      body: JSON.stringify({
+        repository_id: repo.id,
+        ref: repo.default_branch,
+        machine: CFG.CODESPACE_MACHINE,
+        display_name: name,
+        idle_timeout_minutes: CFG.CODESPACE_IDLE_MINUTES,
+        devcontainer_path: ".devcontainer/devcontainer.json",
+      }),
+    });
+  } catch (err) {
+    if (err.status === 403 || err.status === 404) {
+      throw new Error(`GitHub would not create a codespace: ${err.message}. If you have hit the free quota, or Codespaces is disabled for your account, try the Hugging Face option instead.`);
+    }
+    throw err;
+  }
+  // Provisioning → Starting → Available. The first boot of this image on a fresh codespace takes a
+  // few minutes (it builds the Docker image); resumes take about 20 seconds.
+  const started = Date.now();
+  let state = cs.state ?? "Queued";
+  while (Date.now() - started < 20 * 60_000 && state !== "Available") {
+    await sleep(5000);
+    const current = await gh(`/user/codespaces/${cs.name}`).catch(() => null);
+    state = current?.state ?? state;
+    $("creating-text").textContent = `${codespaceStageText(state)} (${Math.round((Date.now() - started) / 1000)}s)`;
+    if (["Failed", "Deleted", "Rebuilding"].includes(state)) throw new Error(`The codespace ended in state ${state}.`);
+  }
+  if (state !== "Available") throw new Error("The codespace did not become available within 20 minutes. Open github.com/codespaces to check on it.");
+  // The servers start from postStartCommand once the codespace is up; give them a moment so the
+  // first request does not meet the forwarder's "nothing listening" page.
+  for (let i = 30; i > 0; i -= 1) {
+    $("creating-text").textContent = `Starting Herdr and Collie… (${i}s)`;
+    await sleep(1000);
+  }
+  const url = `https://${cs.name}-7860.${CFG.CODESPACES_PORT_DOMAIN}/`;
+  S.removeItem("gh_token");
+  $("open-link").href = url;
+  $("resource-link").href = cs.web_url ?? `https://github.com/codespaces`;
+  $("resource-link").textContent = cs.name;
+  $("done-note").textContent = "The port is private to your GitHub account: your browser's GitHub sign-in is the key. Add Collie to your home screen when it offers, then tap a launcher to start an agent.";
+  $("token-block").hidden = true;
+  show("done");
+  setTimeout(() => location.assign(url), 2500);
+}
+
+function codespaceStageText(state) {
+  switch (state) {
+    case "Queued": case "Provisioning": return "Building your codespace";
+    case "Starting": return "Starting your codespace";
+    case "Available": return "Ready";
+    default: return `Waiting for GitHub (${state})`;
+  }
+}
+
+// ---- Hugging Face: sign in ---------------------------------------------------------------------
+async function startHuggingFace() {
+  if (!HF_CLIENT_ID || HF_CLIENT_ID.startsWith("REPLACE")) {
+    fail("Hugging Face sign-in is not configured on this host (no OAuth client id).");
     return;
   }
   const verifier = random(32);
   const state = random(16);
-  S.setItem("pkce", JSON.stringify({ verifier, state }));
+  S.setItem("oauth", JSON.stringify({ provider: "huggingface", state, verifier }));
   const url = new URL(`${HF}/oauth/authorize`);
   url.search = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: HF_CLIENT_ID,
     redirect_uri: redirectUri(),
     response_type: "code",
-    scope: SCOPES,
+    scope: HF_SCOPES,
     state,
     code_challenge: b64url(await sha256(verifier)),
     code_challenge_method: "S256",
@@ -61,19 +191,13 @@ async function startSignIn() {
   location.assign(url.toString());
 }
 
-function redirectUri() {
-  return location.origin + location.pathname;
-}
-
-async function finishSignIn(params) {
-  const saved = JSON.parse(S.getItem("pkce") ?? "null");
-  S.removeItem("pkce");
-  if (!saved || saved.state !== params.get("state")) throw new Error("Sign-in state mismatch. Please start again.");
+async function finishHuggingFace(params, saved) {
+  if (saved.state !== params.get("state")) throw new Error("Sign-in state mismatch. Please start again.");
   const res = await fetch(`${HF}/oauth/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: CLIENT_ID,
+      client_id: HF_CLIENT_ID,
       grant_type: "authorization_code",
       code: params.get("code"),
       redirect_uri: redirectUri(),
@@ -83,15 +207,14 @@ async function finishSignIn(params) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`Hugging Face refused the sign-in: ${body.error_description ?? body.error ?? res.status}`);
   S.setItem("hf_token", body.access_token);
+  S.setItem("provider", "huggingface");
   history.replaceState(null, "", redirectUri());
 }
 
-// ---- Hugging Face API ------------------------------------------------------------------------
 async function hf(path, init = {}) {
-  const token = S.getItem("hf_token");
   const res = await fetch(`${HF}${path}`, {
     ...init,
-    headers: { authorization: `Bearer ${token}`, ...(init.body ? { "content-type": "application/json" } : {}), ...init.headers },
+    headers: { authorization: `Bearer ${S.getItem("hf_token")}`, ...(init.body ? { "content-type": "application/json" } : {}), ...init.headers },
   });
   const text = await res.text();
   let json = null;
@@ -106,7 +229,8 @@ async function hf(path, init = {}) {
 
 const spaceHost = (user, name) => `https://${`${user}-${name}`.toLowerCase().replace(/[^a-z0-9-]/g, "-")}.hf.space`;
 
-async function createBox(user, name) {
+// ---- Hugging Face: duplicate the template ---------------------------------------------------------
+async function createSpace(user, name) {
   const collieToken = random(32); // 43 chars of base64url — the box's root credential
   show("creating");
   $("creating-text").textContent = `Creating ${user}/${name} on your Hugging Face account…`;
@@ -129,69 +253,107 @@ async function createBox(user, name) {
     }
     throw err;
   }
-  // Build + boot. cpu-basic builds of this image take a few minutes.
   const started = Date.now();
   let stage = "STARTING";
   while (Date.now() - started < 20 * 60_000) {
     const runtime = await hf(`/api/spaces/${user}/${name}/runtime`).catch(() => null);
     stage = runtime?.stage ?? stage;
-    $("creating-text").textContent = `${stageText(stage)} (${Math.round((Date.now() - started) / 1000)}s)`;
+    $("creating-text").textContent = `${spaceStageText(stage)} (${Math.round((Date.now() - started) / 1000)}s)`;
     if (stage === "RUNNING") break;
     if (["BUILD_ERROR", "RUNTIME_ERROR", "CONFIG_ERROR"].includes(stage)) {
       throw new Error(`The Space ended in ${stage}. Open https://huggingface.co/spaces/${user}/${name} to see its logs.`);
     }
-    await new Promise((r) => setTimeout(r, 5000));
+    await sleep(5000);
   }
   if (stage !== "RUNNING") throw new Error("The Space did not come up within 20 minutes. It may still be building; open it from your Hugging Face profile.");
   S.removeItem("hf_token");
   const url = `${spaceHost(user, name)}/#token=${collieToken}`;
   $("open-link").href = url;
-  $("space-link").href = `https://huggingface.co/spaces/${user}/${name}`;
-  $("space-link").textContent = `${user}/${name}`;
+  $("resource-link").href = `https://huggingface.co/spaces/${user}/${name}`;
+  $("resource-link").textContent = `${user}/${name}`;
+  $("done-note").textContent = "Opening it now. Add Collie to your home screen when it offers, then tap a launcher to start an agent.";
   $("token-text").textContent = collieToken;
+  $("token-block").hidden = false;
   show("done");
-  // The one-time hand-off. Auto-follow after a moment; the button is there if the browser blocks it.
   setTimeout(() => location.assign(url), 2500);
 }
 
-function stageText(stage) {
+function spaceStageText(stage) {
   switch (stage) {
-    case "BUILDING": case "APP_STARTING": return "Building your box";
-    case "RUNNING_BUILDING": return "Building your box";
+    case "BUILDING": case "APP_STARTING": case "RUNNING_BUILDING": return "Building your box";
     case "RUNNING": return "Running";
     default: return `Waiting for Hugging Face (${stage})`;
   }
 }
 
-// ---- Wiring ----------------------------------------------------------------------------------
+// ---- Wiring ---------------------------------------------------------------------------------------
+const sanitizeName = (raw) => raw.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
+
 async function main() {
-  $("codespaces-link").href = CFG.CODESPACES_URL;
   $("repo-link").href = CFG.REPO_URL;
-  $("start").addEventListener("click", () => { startSignIn().catch((e) => fail(e.message)); });
   $("retry").addEventListener("click", () => { S.clear(); location.assign(redirectUri()); });
   $("copy-token").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText($("token-text").textContent); $("copy-token").textContent = "Copied"; } catch { /* no clipboard */ }
   });
 
   const params = new URLSearchParams(location.search);
-  if (params.get("error")) { fail(`Hugging Face said: ${params.get("error_description") ?? params.get("error")}`); return; }
+  if (params.get("error")) { fail(`Sign-in failed: ${params.get("error_description") ?? params.get("error")}`); return; }
   if (params.get("code")) {
     show("signing-in");
-    try { await finishSignIn(params); } catch (e) { fail(e.message); return; }
+    const saved = JSON.parse(S.getItem("oauth") ?? "null");
+    S.removeItem("oauth");
+    try {
+      if (!saved) throw new Error("This sign-in did not start here. Please start again.");
+      if (saved.provider === "github") await finishGitHub(params, saved);
+      else await finishHuggingFace(params, saved);
+    } catch (e) { fail(e.message); return; }
   }
-  if (!S.getItem("hf_token")) { show("start"); return; }
 
-  let me;
-  try { me = await hf("/api/whoami-v2"); } catch (e) { S.removeItem("hf_token"); fail(`Could not read your Hugging Face profile: ${e.message}`); return; }
-  $("who").textContent = me.name;
+  const provider = S.getItem("provider");
+  if (provider === "github" && S.getItem("gh_token")) return nameStep("github");
+  if (provider === "huggingface" && S.getItem("hf_token")) return nameStep("huggingface");
+
+  // Start: GitHub is the default where this host can complete its sign-in; Hugging Face otherwise.
+  const ghClientId = await githubAvailable();
+  const hfReady = Boolean(HF_CLIENT_ID && !HF_CLIENT_ID.startsWith("REPLACE"));
+  $("start-github").hidden = !ghClientId;
+  $("start-hf").hidden = !hfReady;
+  $("start-hf").classList.toggle("primary", !ghClientId);
+  $("start-hf").classList.toggle("ghost", Boolean(ghClientId));
+  if (!ghClientId && !hfReady) { fail("This page is not configured for any provider yet."); return; }
+  $("start-github").addEventListener("click", () => {
+    if (EMBEDDED) { window.open(location.href, "_blank", "noopener"); return; }
+    startGitHub(ghClientId);
+  });
+  $("start-hf").addEventListener("click", () => {
+    if (EMBEDDED) { window.open(location.href, "_blank", "noopener"); return; }
+    startHuggingFace().catch((e) => fail(e.message));
+  });
+  show("start");
+}
+
+async function nameStep(provider) {
+  let who;
+  try {
+    who = provider === "github" ? (await gh("/user")).login : (await hf("/api/whoami-v2")).name;
+  } catch (e) {
+    S.clear();
+    fail(`Could not read your ${provider === "github" ? "GitHub" : "Hugging Face"} profile: ${e.message}`);
+    return;
+  }
+  $("who").textContent = who;
   $("name-input").value = CFG.DEFAULT_NAME;
+  $("name-hint-github").hidden = provider !== "github";
+  $("name-hint-hf").hidden = provider !== "huggingface";
+  $("name-label").textContent = provider === "github" ? "Codespace name" : "Space name";
   $("name-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
-    const name = $("name-input").value.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
+    const name = sanitizeName($("name-input").value);
     if (!name) { $("name-error").textContent = "Give it a name."; return; }
     $("name-error").textContent = "";
-    createBox(me.name, name).catch((e) => fail(e.message));
-  });
+    const run = provider === "github" ? createCodespace(name) : createSpace(who, name);
+    run.catch((e) => fail(e.message));
+  }, { once: true });
   show("name");
 }
 
