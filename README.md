@@ -55,6 +55,20 @@ for a device token of its own before it renders, stores that, and strips the fra
 The device then appears under Settings like any paired phone and can be revoked on its own. The
 code-based `freeagent-pair` path still works too.
 
+## The template Space and the landing page
+
+`polats/freeagent` on Hugging Face is a public **template** copy of this repo, kept in sync by
+`.github/workflows/sync-to-hf-space.yml` after every green CI run. It runs in template mode
+(`FREEAGENT_TEMPLATE=1`), serving a notice and starting nothing. To enable the sync on your fork:
+
+```bash
+gh secret set HF_TOKEN --repo OWNER/REPO            # a Hugging Face write token
+gh variable set HF_SPACE --repo OWNER/REPO --body "hfuser/freeagent"
+```
+
+`landing/` is the static page that duplicates the template into a visitor's own account, on
+Vercel. See [`landing/README.md`](landing/README.md).
+
 ## Run as a GitHub Codespace
 
 ```

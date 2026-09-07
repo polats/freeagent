@@ -45,6 +45,17 @@ else
   header it does not recognise, so without one of these every request would be rejected."
 fi
 
+# --- template mode --------------------------------------------------------------------------
+# The public template Space that the landing page duplicates from has no COLLIE_AUTH_TOKEN of its
+# own and must never run agents. With FREEAGENT_TEMPLATE=1 (a Space *variable*, so it is copied
+# nowhere: duplicates get secrets and variables of their own) it serves one static page saying so,
+# stays healthy for Hugging Face, and exits the moment anything else is asked of it.
+if [ "${FREEAGENT_TEMPLATE:-0}" = "1" ]; then
+  log "template mode: serving the template notice on :$PORT — nothing else starts"
+  mkdir -p /tmp/template && cp /opt/freeagent/template/index.html /tmp/template/index.html
+  cd /tmp/template && exec python3 -m http.server "$PORT" --bind 0.0.0.0
+fi
+
 # --- refuse to run unprotected -------------------------------------------------------------
 # Collie's first factor here is COLLIE_AUTH_TOKEN (its "Variant F"): every /api route, reads
 # included, needs the token or a paired device's token; static assets and /api/health stay open.

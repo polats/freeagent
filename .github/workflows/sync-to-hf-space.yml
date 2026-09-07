@@ -1,0 +1,97 @@
+name: Sync template Space
+
+# Publishes this repo as the public Hugging Face Space the landing page duplicates from. GitHub is
+# the source of truth: the push is a force-push, so edits made in the Space's own UI are discarded.
+#
+# Needs a repository secret HF_TOKEN — a Hugging Face WRITE token for the account that owns the
+# Space — and a repository variable HF_SPACE naming the Space (owner/name). The variable doubles
+# as the on switch: without it the job does not run.
+# The Space runs in template mode (variable FREEAGENT_TEMPLATE=1): it serves a notice and never
+# starts agents, so it needs no COLLIE_AUTH_TOKEN and stays healthy.
+
+on:
+  workflow_run:
+    workflows: ["Verify image"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: hf-space-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # Only after a green verify run (or by hand) — a broken Dockerfile must fail on a runner, not
+    # leave the template Space in BUILD_ERROR.
+    # Also gated on the HF_SPACE repo variable so the job stays quiet until the operator has set up
+    # the secret and the variable together.
+    if: ${{ vars.HF_SPACE != '' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    env:
+      HF_SPACE: ${{ vars.HF_SPACE }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the Hugging Face account
+        id: who
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is not set (Settings -> Secrets and variables -> Actions)"
+            exit 1
+          fi
+          user=$(curl -s -f -H "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/whoami-v2 | jq -r '.name // empty')
+          if [ -z "$user" ]; then
+            echo "::error::HF_TOKEN was rejected by huggingface.co (expired, or not a write token?)"
+            exit 1
+          fi
+          echo "user=$user" >> "$GITHUB_OUTPUT"
+          echo "Authenticated as $user; template Space is spaces/$HF_SPACE"
+
+      - name: Create the Space if it does not exist
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/spaces/$HF_SPACE")
+          if [ "$code" = "404" ]; then
+            name="${HF_SPACE#*/}"; org="${HF_SPACE%/*}"
+            body=$(jq -n --arg name "$name" --arg org "$org" --arg owner "${{ steps.who.outputs.user }}" \
+              '{type:"space", name:$name, sdk:"docker", private:false} + (if $org != $owner then {organization:$org} else {} end)')
+            curl -s -f -X POST -H "Authorization: Bearer $HF_TOKEN" -H "Content-Type: application/json" \
+              -d "$body" https://huggingface.co/api/repos/create >/dev/null
+            echo "Created spaces/$HF_SPACE"
+          elif [ "$code" = "200" ]; then
+            echo "spaces/$HF_SPACE exists"
+          else
+            echo "::error::GET /api/spaces/$HF_SPACE returned $code"; exit 1
+          fi
+
+      - name: Push to the Space
+        run: |
+          git push --force "https://${{ steps.who.outputs.user }}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" \
+            "HEAD:refs/heads/main" 2>&1 | sed "s/${HF_TOKEN}/***/g"
+
+      - name: Mark it as the template
+        run: |
+          # A variable, not a secret: variables are plain env, and a duplicate does NOT inherit them,
+          # which is exactly right — the copy must boot for real, the template must not.
+          curl -s -f -X POST -H "Authorization: Bearer $HF_TOKEN" -H "Content-Type: application/json" \
+            -d '{"key":"FREEAGENT_TEMPLATE","value":"1","description":"Serve the template notice; start nothing."}' \
+            "https://huggingface.co/api/spaces/${HF_SPACE}/variables" >/dev/null
+          echo "FREEAGENT_TEMPLATE=1 set on spaces/$HF_SPACE"
+
+      - name: Wait for the Space to come back up
+        run: |
+          for i in $(seq 1 60); do
+            stage=$(curl -s -m 20 -H "Authorization: Bearer $HF_TOKEN" \
+              "https://huggingface.co/api/spaces/${HF_SPACE}/runtime" | jq -r '.stage // "UNKNOWN"')
+            echo "[$i] $stage"
+            case "$stage" in
+              RUNNING) echo "Template Space is running."; exit 0 ;;
+              BUILD_ERROR|RUNTIME_ERROR|CONFIG_ERROR)
+                echo "::error::Space ended in $stage — https://huggingface.co/spaces/${HF_SPACE}"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::warning::Space did not reach RUNNING within 15 minutes; last stage: $stage"

@@ -103,6 +103,7 @@ ENV SHELL=/bin/bash
 COPY --chown=node:node entrypoint.sh /home/node/entrypoint.sh
 COPY --chown=node:node config/ /opt/freeagent/config/
 COPY --chown=node:node bin/ /opt/freeagent/bin/
+COPY --chown=node:node template/ /opt/freeagent/template/
 RUN chmod +x /home/node/entrypoint.sh /opt/freeagent/bin/* \
     && ln -s /opt/freeagent/bin/freeagent-pair /usr/local/bin/freeagent-pair \
     && mkdir -p /home/node/workspace \
