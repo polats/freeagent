@@ -74,6 +74,7 @@ jobs:
           rsync -a --exclude '.git' --exclude '.github' --exclude 'landing' --exclude 'hf-space' --exclude 'README.md' ./ /tmp/space/
           cp hf-space/README.md /tmp/space/README.md
           cd /tmp/space
+          set -o pipefail   # a rejected push must fail the job, even through the token-masking sed
           git init -q -b main
           git -c user.name=github-actions -c user.email=actions@github.com add -A
           git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "Publish template from ${GITHUB_SHA::7}"

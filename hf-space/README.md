@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Template for freeagent boxes. Duplicate it from freeagent.cosmiclabs.org.
+short_description: Template for freeagent boxes. Do not run this one.
 ---
 
 # freeagent template
