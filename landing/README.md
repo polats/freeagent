@@ -34,7 +34,7 @@ wrangler.toml
 
 | Where | URL | Sign-in |
 | --- | --- | --- |
-| Cloudflare Pages (primary) | https://freeagent.cosmiclabs.org | GitHub → Codespace (default; needs the two Pages secrets below), Hugging Face → Space (needs an HF OAuth app for this host, id in `config.js`) |
+| Cloudflare Pages (primary) | https://freeagent.cosmiclabs.org | GitHub → Codespace (default) and Hugging Face → Space; both exchanges run in Pages Functions holding the app secrets (`GITHUB_CLIENT_ID/SECRET`, `HF_CLIENT_ID/SECRET`) |
 | Hugging Face static Space | https://polats-freeagent-landing.static.hf.space | Hugging Face only; the client is provisioned by `hf_oauth: true` in this README's front matter |
 
 `.github/workflows/deploy-landing.yml` deploys to Pages on every push that touches `landing/`
@@ -49,7 +49,10 @@ GitHub's OAuth token endpoint has no CORS and needs the app secret, so the excha
 1. GitHub → Settings → Developer settings → OAuth Apps → New. Callback URL
    `https://freeagent.cosmiclabs.org/`.
 2. `wrangler pages secret put GITHUB_CLIENT_ID --project-name freeagent` and the same for
-   `GITHUB_CLIENT_SECRET`.
+   `GITHUB_CLIENT_SECRET`. For Hugging Face on this host, register an app at huggingface.co →
+   Settings → Developer applications (redirect `https://freeagent.cosmiclabs.org/`, scopes openid
+   profile manage-repos) and put `HF_CLIENT_ID` / `HF_CLIENT_SECRET` the same way; the page then
+   exchanges through `functions/api/auth/hf/token.js`.
 
 The page shows "Continue with GitHub" only where `/api/auth/github/config` answers.
 

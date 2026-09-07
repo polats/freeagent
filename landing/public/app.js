@@ -22,8 +22,17 @@ const S = window.sessionStorage;
 // provisioned for this exact host as `window.huggingface.variables`. Elsewhere config.js supplies
 // a client id registered for that origin.
 const SPACE_VARS = window.huggingface?.variables ?? {};
-const HF_CLIENT_ID = SPACE_VARS.OAUTH_CLIENT_ID || CFG.HF_CLIENT_ID;
 const HF_SCOPES = SPACE_VARS.OAUTH_SCOPES || CFG.HF_SCOPES;
+// Resolved at start-up: { clientId, hosted } — `hosted` means this host's Pages Function holds the
+// app secret and does the code exchange; otherwise the page exchanges directly (public client).
+let HF_AUTH = null;
+async function resolveHfAuth() {
+  const hosted = await hostedClientId("hf");
+  if (hosted) return { clientId: hosted, hosted: true };
+  const direct = SPACE_VARS.OAUTH_CLIENT_ID || CFG.HF_CLIENT_ID;
+  if (direct && !direct.startsWith("REPLACE")) return { clientId: direct, hosted: false };
+  return null;
+}
 const EMBEDDED = window.top !== window.self;
 
 const $ = (id) => document.getElementById(id);
@@ -44,10 +53,12 @@ async function sha256(text) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
 }
 
-// ---- GitHub: sign in -----------------------------------------------------------------------------
-async function githubAvailable() {
+// ---- Host-provided sign-in config ---------------------------------------------------------------
+// On Cloudflare Pages the Functions under /api/auth/<provider>/ answer with a public client id
+// when that provider's secret is configured on the project; anywhere else they 404.
+async function hostedClientId(provider) {
   try {
-    const res = await fetch("/api/auth/github/config", { cache: "no-store" });
+    const res = await fetch(`/api/auth/${provider}/config`, { cache: "no-store" });
     if (!res.ok) return null;
     const json = await res.json();
     return typeof json.client_id === "string" && json.client_id ? json.client_id : null;
@@ -55,6 +66,9 @@ async function githubAvailable() {
     return null;
   }
 }
+const githubAvailable = () => hostedClientId("github");
+
+// ---- GitHub: sign in -----------------------------------------------------------------------------
 
 function startGitHub(clientId) {
   const state = random(16);
@@ -171,16 +185,16 @@ function codespaceStageText(state) {
 
 // ---- Hugging Face: sign in ---------------------------------------------------------------------
 async function startHuggingFace() {
-  if (!HF_CLIENT_ID || HF_CLIENT_ID.startsWith("REPLACE")) {
+  if (!HF_AUTH) {
     fail("Hugging Face sign-in is not configured on this host (no OAuth client id).");
     return;
   }
   const verifier = random(32);
   const state = random(16);
-  S.setItem("oauth", JSON.stringify({ provider: "huggingface", state, verifier }));
+  S.setItem("oauth", JSON.stringify({ provider: "huggingface", state, verifier, hosted: HF_AUTH.hosted, clientId: HF_AUTH.clientId }));
   const url = new URL(`${HF}/oauth/authorize`);
   url.search = new URLSearchParams({
-    client_id: HF_CLIENT_ID,
+    client_id: HF_AUTH.clientId,
     redirect_uri: redirectUri(),
     response_type: "code",
     scope: HF_SCOPES,
@@ -193,17 +207,23 @@ async function startHuggingFace() {
 
 async function finishHuggingFace(params, saved) {
   if (saved.state !== params.get("state")) throw new Error("Sign-in state mismatch. Please start again.");
-  const res = await fetch(`${HF}/oauth/token`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: HF_CLIENT_ID,
-      grant_type: "authorization_code",
-      code: params.get("code"),
-      redirect_uri: redirectUri(),
-      code_verifier: saved.verifier,
-    }),
-  });
+  const res = saved.hosted
+    ? await fetch("/api/auth/hf/token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: params.get("code"), redirect_uri: redirectUri(), code_verifier: saved.verifier }),
+      })
+    : await fetch(`${HF}/oauth/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: saved.clientId,
+          grant_type: "authorization_code",
+          code: params.get("code"),
+          redirect_uri: redirectUri(),
+          code_verifier: saved.verifier,
+        }),
+      });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`Hugging Face refused the sign-in: ${body.error_description ?? body.error ?? res.status}`);
   S.setItem("hf_token", body.access_token);
@@ -314,8 +334,9 @@ async function main() {
   if (provider === "huggingface" && S.getItem("hf_token")) return nameStep("huggingface");
 
   // Start: GitHub is the default where this host can complete its sign-in; Hugging Face otherwise.
-  const ghClientId = await githubAvailable();
-  const hfReady = Boolean(HF_CLIENT_ID && !HF_CLIENT_ID.startsWith("REPLACE"));
+  const [ghClientId, hfAuth] = await Promise.all([githubAvailable(), resolveHfAuth()]);
+  HF_AUTH = hfAuth;
+  const hfReady = hfAuth !== null;
   $("start-github").hidden = !ghClientId;
   $("start-hf").hidden = !hfReady;
   $("start-hf").classList.toggle("primary", !ghClientId);
