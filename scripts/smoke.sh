@@ -65,7 +65,7 @@ echo "launch -> HTTP $status: $body"
 [ "$status" = "200" ] || fail "/api/launch returned $status"
 panes=0
 for _ in $(seq 1 15); do
-  panes=$(docker exec "$NAME" bash -c 'source /tmp/freeagent.env && herdr api snapshot | jq ".panes | length"' 2>/dev/null || echo 0)
+  panes=$(docker exec "$NAME" bash -c 'source /tmp/freeagent.env && herdr api snapshot | jq ".result.snapshot.panes | length"' 2>/dev/null || echo 0)
   [ "${panes:-0}" -gt 0 ] && break
   sleep 1
 done
