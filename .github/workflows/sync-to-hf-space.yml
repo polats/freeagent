@@ -33,8 +33,6 @@ jobs:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Resolve the Hugging Face account
         id: who
@@ -69,6 +67,16 @@ jobs:
 
       - name: Push to the Space
         run: |
+          # The Space gets the box image files plus its OWN README (hf-space/README.md carries the
+          # Space configuration front matter), never the repo README, the landing page or CI. Fresh
+          # single-commit history each time: the Space is a publish target, not a mirror.
+          rm -rf /tmp/space && mkdir /tmp/space
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'landing' --exclude 'hf-space' --exclude 'README.md' ./ /tmp/space/
+          cp hf-space/README.md /tmp/space/README.md
+          cd /tmp/space
+          git init -q -b main
+          git -c user.name=github-actions -c user.email=actions@github.com add -A
+          git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "Publish template from ${GITHUB_SHA::7}"
           git push --force "https://${{ steps.who.outputs.user }}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" \
             "HEAD:refs/heads/main" 2>&1 | sed "s/${HF_TOKEN}/***/g"
 
