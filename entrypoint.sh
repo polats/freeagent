@@ -33,6 +33,7 @@ fi
 if [ -n "$PUBLIC_HOST" ]; then
   export COLLIE_PUBLIC_HOSTS="$PUBLIC_HOST"
   export COLLIE_ALLOWED_ORIGINS="https://${PUBLIC_HOST}"
+  export COLLIE_PUBLIC_URL="https://${PUBLIC_HOST}"   # lets `collie pair` print a QR for the phone
   log "public host: https://${PUBLIC_HOST}"
 elif [ "${FREEAGENT_ALLOW_ANY_HOST:-0}" = "1" ]; then
   export COLLIE_ALLOW_ANY_HOST=1
@@ -195,7 +196,7 @@ export COLLIE_TRUSTED_USER_OPTIONAL=1
 {
   for v in HERDR_SOCKET_PATH XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME XDG_CACHE_HOME \
            COLLIE_STATE_DIR HERDR_PLUGIN_CONFIG_DIR COLLIE_MUX COLLIE_HOST COLLIE_PORT \
-           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_ALLOW_ANY_HOST; do
+           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST; do
     [ -n "${!v:-}" ] && printf 'export %s=%q\n' "$v" "${!v}"
   done
 } > /tmp/freeagent.env
