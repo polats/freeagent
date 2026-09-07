@@ -2,13 +2,11 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-Frame-Options: DENY
-  Content-Security-Policy: default-src 'self'; connect-src 'self' https://huggingface.co https://api.github.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://avatars.githubusercontent.com https://huggingface.co https://cdn-avatars.huggingface.co; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://huggingface.co https://github.com
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://huggingface.co https://api.github.com; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'
 
 /app.js
   Cache-Control: no-cache
-
 /config.js
   Cache-Control: no-cache
-
 /index.html
   Cache-Control: no-cache
