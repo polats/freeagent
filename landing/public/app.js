@@ -48,7 +48,9 @@ async function hostedConfig(provider) {
     if (!res.ok) return null;
     const json = await res.json();
     if (typeof json.client_id !== "string" || !json.client_id) return null;
-    return { clientId: json.client_id, redirect: json.redirect_uri || `${location.origin}/`, hosted: true };
+    // GitHub: null redirect means "let GitHub use the registered callback". HF always needs one.
+    const fallback = provider === "gh" ? null : `${location.origin}/`;
+    return { clientId: json.client_id, redirect: json.redirect_uri || fallback, hosted: true };
   } catch {
     return null;
   }
@@ -73,7 +75,12 @@ async function startSignIn(provider, intent) {
   let url;
   if (provider === "gh") {
     url = new URL("https://github.com/login/oauth/authorize");
-    url.search = new URLSearchParams({ client_id: auth.clientId, redirect_uri: auth.redirect, scope: "codespace", state }).toString();
+    url.search = new URLSearchParams({
+      client_id: auth.clientId,
+      ...(auth.redirect ? { redirect_uri: auth.redirect } : {}),
+      scope: "codespace",
+      state,
+    }).toString();
   } else {
     tx.verifier = random(32);
     url = new URL(`${HF}/oauth/authorize`);
@@ -99,7 +106,7 @@ async function finishSignIn(params, tx) {
     res = await fetch("/api/auth/github/token", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code, redirect_uri: tx.redirect }),
+      body: JSON.stringify({ code, ...(tx.redirect ? { redirect_uri: tx.redirect } : {}) }),
     });
   } else if (tx.hosted) {
     res = await fetch("/api/auth/hf/token", {

@@ -18,8 +18,9 @@ export async function onRequestPost({ request, env }) {
     return new Response("bad request", { status: 400 });
   }
   const code = typeof body?.code === "string" ? body.code : "";
-  const redirectUri = typeof body?.redirect_uri === "string" ? body.redirect_uri : "";
-  if (!code || !redirectUri.startsWith(self)) return new Response("bad request", { status: 400 });
+  // Optional: when the authorize request carried no redirect_uri, the exchange must not either.
+  const redirectUri = typeof body?.redirect_uri === "string" && body.redirect_uri ? body.redirect_uri : null;
+  if (!code || (redirectUri !== null && !redirectUri.startsWith(self))) return new Response("bad request", { status: 400 });
 
   const res = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -28,7 +29,7 @@ export async function onRequestPost({ request, env }) {
       client_id: env.GITHUB_CLIENT_ID,
       client_secret: env.GITHUB_CLIENT_SECRET,
       code,
-      redirect_uri: redirectUri,
+      ...(redirectUri ? { redirect_uri: redirectUri } : {}),
     }),
   });
   const json = await res.json().catch(() => ({}));

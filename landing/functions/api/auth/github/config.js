@@ -5,7 +5,10 @@
 // routes /auth/* back to the page). Absent secrets → 404, and the page hides the GitHub option.
 export async function onRequestGet({ request, env }) {
   if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) return new Response("not configured", { status: 404 });
+  // No redirect_uri unless pinned: GitHub then sends the user to the callback URL registered on
+  // the app, whatever it is, and the page catches the code on any path under this origin
+  // (_redirects). Sending one that differs even slightly from the registered value is refused.
   const self = new URL(request.url).origin;
-  const redirect = env.GITHUB_CALLBACK_URL && env.GITHUB_CALLBACK_URL.startsWith(self) ? env.GITHUB_CALLBACK_URL : `${self}/`;
-  return Response.json({ client_id: env.GITHUB_CLIENT_ID, redirect_uri: redirect }, { headers: { "cache-control": "no-store" } });
+  const pinned = env.GITHUB_CALLBACK_URL && env.GITHUB_CALLBACK_URL.startsWith(self) ? env.GITHUB_CALLBACK_URL : null;
+  return Response.json({ client_id: env.GITHUB_CLIENT_ID, redirect_uri: pinned }, { headers: { "cache-control": "no-store" } });
 }
