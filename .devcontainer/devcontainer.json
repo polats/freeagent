@@ -1,0 +1,51 @@
+// freeagent-cloud as a GitHub Codespace — the same Dockerfile as Spaces and Railway.
+//
+// A dev container starts with its entrypoint overridden, so the image's ENTRYPOINT never runs:
+// the servers are started explicitly by postStartCommand, which runs on create AND on every
+// resume from an idle stop (codespaces stop after 30 minutes idle and keep their disk).
+{
+  "name": "freeagent-cloud",
+  "build": {
+    "dockerfile": "../Dockerfile"
+  },
+
+  // Without an SSH server `gh codespace ssh` and `gh codespace logs` both refuse, and a codespace
+  // whose servers failed to start cannot be inspected. Also how you run `freeagent-pair`.
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {}
+  },
+
+  // uid 1000, matching the image.
+  "remoteUser": "node",
+
+  "containerEnv": {
+    // Hugging Face has no $PORT and falls back to 7860; keep one number everywhere.
+    "PORT": "7860",
+    // /data does not exist in a codespace, but /workspaces survives stop/start, so herdr sessions,
+    // collie pairings and code outlive an idle timeout and are lost only with the codespace itself.
+    "FREEAGENT_STATE_ROOT": "/workspaces/.freeagent-state"
+  },
+
+  "forwardPorts": [7860],
+  "portsAttributes": {
+    "7860": {
+      "label": "collie",
+      // PRIVATE, deliberately — unlike opencode-cloud. Collie (Phase 0) has no first-factor auth of
+      // its own, so the codespace's port forwarding, which requires the owner's GitHub identity on
+      // every request, is the authentication. A browser gets it from the GitHub session cookie; the
+      // Crux app sends X-Github-Token. Do not make this public.
+      "visibility": "private",
+      "onAutoForward": "silent"
+    }
+  },
+
+  // `bash -c` is not decoration: run by /bin/sh the detach does not hold and the servers die when
+  // the hook returns. Verified in opencode-cloud across a stop/start cycle.
+  "postStartCommand": "bash -c 'setsid nohup ${containerWorkspaceFolder}/.devcontainer/start-freeagent.sh >> /tmp/freeagent.log 2>&1 < /dev/null & sleep 2'",
+
+  "customizations": {
+    "vscode": {
+      "extensions": []
+    }
+  }
+}

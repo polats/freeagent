@@ -1,0 +1,16 @@
+name: Verify image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build and smoke-test the image
+        run: scripts/smoke.sh

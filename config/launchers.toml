@@ -1,0 +1,23 @@
+# Collie launcher rows for freeagent-cloud: the Launch buttons on the phone. Each row types its
+# command verbatim into a fresh shell in a new Space and sends Enter. This file IS the allowlist:
+# POST /api/launch accepts only a command that matches a row here exactly.
+#
+# Seeded once into $HERDR_PLUGIN_CONFIG_DIR/launchers.toml by entrypoint.sh; edit that copy.
+# Edits are picked up live. No cwd, so a tap opens in the workspace (dashboard) or in the
+# current pane's own folder (switcher).
+
+[[launchers]]
+command = "claude"
+label = "Claude Code"
+
+[[launchers]]
+command = "codex"
+label = "Codex"
+
+[[launchers]]
+command = "opencode"
+label = "OpenCode"
+
+[[launchers]]
+command = "bash"
+label = "Shell"

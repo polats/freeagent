@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Issue a Collie pairing code from inside the container.
+#
+# Collie treats a paired device as the write credential: once one device is paired, every write
+# needs its token. The `collie pair` verb writes the pending code into the bridge's state dir and
+# prints it; the phone enters it under Settings. This wrapper runs that verb with the same
+# environment entrypoint.sh resolved for the bridge, so both land on the same state dir.
+#
+#   Codespaces:  gh codespace ssh -c <name> -- freeagent-pair
+#   Railway:     railway ssh -- freeagent-pair
+#   docker:      docker exec -it <container> freeagent-pair
+set -euo pipefail
+if [ ! -f /tmp/freeagent.env ]; then
+  echo "freeagent-pair: /tmp/freeagent.env not found — is the container's entrypoint running?" >&2
+  exit 1
+fi
+# shellcheck disable=SC1091
+source /tmp/freeagent.env
+cd /opt/collie
+exec bun run cli/main.ts pair "$@"
