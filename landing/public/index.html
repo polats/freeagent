@@ -7,19 +7,22 @@
 <meta name="description" content="Run Claude Code, Codex and OpenCode on a box you own — a GitHub Codespace or a Hugging Face Space — and drive them from your phone.">
 <meta name="color-scheme" content="dark light">
 <style>
-  :root{--bg:#0f1115;--fg:#e8e8ec;--muted:#a3a8b3;--card:#171a21;--line:#262a33;--accent:#ffd21e;--accent-fg:#1a1a1a;--danger:#ff6b6b}
-  @media (prefers-color-scheme: light){:root{--bg:#f7f7f8;--fg:#15171b;--muted:#5d6370;--card:#fff;--line:#e3e5ea}}
+  :root{--bg:#0f1115;--fg:#e8e8ec;--muted:#a3a8b3;--card:#171a21;--line:#262a33;--accent:#ffd21e;--accent-fg:#1a1a1a;--danger:#ff6b6b;--ok:#7bd88f}
+  @media (prefers-color-scheme: light){:root{--bg:#f7f7f8;--fg:#15171b;--muted:#5d6370;--card:#fff;--line:#e3e5ea;--ok:#1d8f3a}}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column}
-  main{flex:1;display:grid;place-items:center;padding:1.5rem}
-  .card{width:100%;max-width:26rem;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.5rem}
-  h1{font-size:1.75rem;line-height:1.2;margin:0 0 .5rem}
-  h2{font-size:1.2rem;margin:0 0 .5rem}
+  main{flex:1;display:grid;place-items:start center;padding:1.5rem}
+  .card{width:100%;max-width:28rem;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.5rem}
+  h1{font-size:1.6rem;line-height:1.2;margin:0 0 .5rem}
+  h2{font-size:1.05rem;margin:1.4rem 0 .5rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
   p{margin:.5rem 0;color:var(--muted)}
   .lead{color:var(--fg)}
-  button,.btn{display:block;width:100%;padding:.9rem 1rem;border:0;border-radius:12px;font:inherit;font-weight:600;cursor:pointer;text-align:center;text-decoration:none}
+  button,.btn{display:block;width:100%;padding:.9rem 1rem;border:0;border-radius:12px;font:inherit;font-weight:600;cursor:pointer;text-align:center;text-decoration:none;margin-top:.6rem}
   .primary{background:var(--accent);color:var(--accent-fg)}
-  .ghost{background:transparent;color:var(--fg);border:1px solid var(--line);margin-top:.6rem}
+  .ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  .small{display:inline-block;width:auto;padding:.45rem .8rem;font-size:.9rem;margin:0 0 0 .4rem;border-radius:9px}
+  .danger{color:var(--danger);border-color:var(--danger)}
+  button:disabled{opacity:.5;cursor:default}
   input{width:100%;padding:.8rem;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit}
   label{display:block;font-size:.9rem;color:var(--muted);margin:.8rem 0 .3rem}
   .err{color:var(--danger);min-height:1.2em;font-size:.9rem}
@@ -28,52 +31,74 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   footer{padding:1rem;text-align:center;font-size:.85rem;color:var(--muted)}
   footer a{color:inherit}
-  ol{padding-left:1.2rem;color:var(--muted)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.7rem 0;border-top:1px solid var(--line)}
+  .row:first-of-type{border-top:0}
+  .row .who{color:var(--muted);font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .who.on{color:var(--ok)}
+  .box{border:1px solid var(--line);border-radius:12px;padding:.8rem;margin-top:.6rem}
+  .box .title{display:flex;justify-content:space-between;gap:.5rem;align-items:baseline}
+  .box .name{font-weight:600;word-break:break-all}
+  .box .meta{font-size:.85rem;color:var(--muted)}
+  .box .actions{display:flex;gap:.4rem;margin-top:.5rem}
+  .box .actions button{margin:0;flex:1}
+  .muted{color:var(--muted);font-size:.9rem}
   [hidden]{display:none!important}
 </style>
 </head>
 <body>
 <main>
   <div class="card">
-    <section data-step="start">
+    <section data-step="home" hidden>
       <h1>Your coding agents, on a box you own, from your phone.</h1>
-      <p class="lead">Claude Code, Codex and OpenCode running on a machine in your own account, with a phone UI that shows you which agent needs you and lets you answer with a tap.</p>
-      <ol>
-        <li>Sign in with GitHub or Hugging Face.</li>
-        <li>We create a box for you: a Codespace, or a duplicate of the freeagent Space.</li>
-        <li>You land in it. Sign in to your agents with your own subscriptions.</li>
-      </ol>
-      <p>Free tiers on both. Nothing is stored anywhere but your box and your phone.</p>
-      <button id="start-github" class="primary" hidden>Continue with GitHub</button>
-      <button id="start-hf" class="ghost" hidden>Continue with Hugging Face</button>
+      <p class="lead">Claude Code, Codex and OpenCode on a machine in your own account, with a phone UI that shows you which agent needs you and lets you answer with a tap.</p>
+
+      <h2>Accounts</h2>
+      <div class="row" id="gh-row" hidden>
+        <div><strong>GitHub</strong><div class="who" id="gh-who">not signed in</div></div>
+        <div><button class="small ghost" id="gh-signin">Sign in</button><button class="small ghost" id="gh-signout" hidden>Sign out</button></div>
+      </div>
+      <div class="row" id="hf-row" hidden>
+        <div><strong>Hugging Face</strong><div class="who" id="hf-who">not signed in</div></div>
+        <div><button class="small ghost" id="hf-signin">Sign in</button><button class="small ghost" id="hf-signout" hidden>Sign out</button></div>
+      </div>
+
+      <h2>Your boxes</h2>
+      <div id="boxes"></div>
+      <p class="muted" id="boxes-note"></p>
+
+      <h2>New box</h2>
+      <button id="create-github" class="primary" hidden>New codespace</button>
+      <button id="create-hf" class="ghost" hidden>New Hugging Face Space</button>
+      <p class="muted">Free tiers on both. A codespace stops after an hour idle and keeps everything; a Space sleeps after two idle days and, without paid storage, forgets sign-ins when it restarts.</p>
     </section>
 
     <section data-step="signing-in" hidden>
       <div class="spinner"></div>
-      <h2>Signing you in…</h2>
+      <h1>Signing you in…</h1>
     </section>
 
     <section data-step="name" hidden>
-      <h2>Hi <span id="who"></span>. Name your box.</h2>
+      <h1>Hi <span id="who"></span>. Name your box.</h1>
       <form id="name-form">
         <label for="name-input" id="name-label">Name</label>
         <input id="name-input" autocomplete="off" spellcheck="false" maxlength="48">
         <p class="err" id="name-error"></p>
         <p id="name-hint-github" hidden>A 2-core codespace on your GitHub account. It stops after an hour idle and restarts on your next visit with everything kept; the free plan includes 120 core-hours a month. Its port is private to you.</p>
-        <p id="name-hint-hf" hidden>A public Space on free cpu-basic hardware. Collie's token is the door, not the Space's visibility. It sleeps after two idle days and wakes on the next visit; without paid storage a restart forgets sign-ins.</p>
+        <p id="name-hint-hf" hidden>A public Space on free cpu-basic hardware. Collie's token is the door, not the Space's visibility.</p>
         <button type="submit" class="primary">Create my box</button>
+        <button type="button" class="ghost" id="name-back">Back</button>
       </form>
     </section>
 
     <section data-step="creating" hidden>
       <div class="spinner"></div>
-      <h2>Creating your box</h2>
+      <h1>Creating your box</h1>
       <p id="creating-text"></p>
       <p>This takes a few minutes the first time. Keep this page open.</p>
     </section>
 
     <section data-step="done" hidden>
-      <h2>Your box is running.</h2>
+      <h1>Your box is running.</h1>
       <p id="done-note"></p>
       <a id="open-link" class="btn primary" href="#">Open my box</a>
       <p>Box: <a id="resource-link" href="#"></a></p>
@@ -82,12 +107,13 @@
         <p><code id="token-text"></code></p>
         <button id="copy-token" class="ghost">Copy token</button>
       </div>
+      <button id="done-home" class="ghost">Back to my boxes</button>
     </section>
 
     <section data-step="error" hidden>
-      <h2>Something went wrong</h2>
+      <h1>Something went wrong</h1>
       <p class="err" id="error-text"></p>
-      <button id="retry" class="ghost">Start again</button>
+      <button id="retry" class="ghost">Back</button>
     </section>
   </div>
 </main>

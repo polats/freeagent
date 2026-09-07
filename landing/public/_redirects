@@ -1,0 +1,3 @@
+# Any OAuth callback path under /auth/ is the page itself: the code and state arrive as query
+# parameters and app.js finishes the sign-in wherever it lands.
+/auth/*  /index.html  200
