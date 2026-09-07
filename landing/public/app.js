@@ -44,7 +44,9 @@ const fail = (message) => {
   show("error");
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const redirectUri = () => location.origin + location.pathname;
+// Always the origin root with a trailing slash — never /index.html or a preview host — because
+// this exact string is what the OAuth apps have registered as their callback.
+const redirectUri = () => `${location.origin}/`;
 
 // ---- crypto helpers ----------------------------------------------------------------------------
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -310,6 +312,14 @@ function spaceStageText(stage) {
 const sanitizeName = (raw) => raw.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
 
 async function main() {
+  // A Pages default or preview host is not the registered OAuth origin: go to the canonical one
+  // (query and fragment preserved) before anything else. The HF static Space is its own origin
+  // with its own platform-provisioned OAuth app, so it is left alone.
+  const onPagesHost = /\.pages\.dev$/.test(location.hostname);
+  if (onPagesHost && CFG.CANONICAL_ORIGIN && location.origin !== CFG.CANONICAL_ORIGIN) {
+    location.replace(CFG.CANONICAL_ORIGIN + "/" + location.search + location.hash);
+    return;
+  }
   $("repo-link").href = CFG.REPO_URL;
   $("retry").addEventListener("click", () => { S.clear(); location.assign(redirectUri()); });
   $("copy-token").addEventListener("click", async () => {

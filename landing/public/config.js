@@ -2,6 +2,9 @@
 // PKCE client id. There is no secret anywhere on this page — that is the point of it. The GitHub
 // OAuth client id and secret live in Cloudflare Pages secrets, read by functions/api/auth/github.
 window.FREEAGENT = {
+  // The one origin the OAuth apps are registered for. Any other Pages host (the *.pages.dev
+  // default, a preview deployment) bounces here before sign-in, so redirect_uri always matches.
+  CANONICAL_ORIGIN: "https://freeagent.cosmiclabs.org",
   // GitHub Codespaces (default where available): the repo the codespace is created from.
   TEMPLATE_REPO: "polats/freeagent",
   CODESPACE_MACHINE: "basicLinux32gb",
