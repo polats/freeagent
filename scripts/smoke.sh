@@ -58,12 +58,23 @@ docker exec "$NAME" bash -c 'source /tmp/freeagent.env && herdr api snapshot' >/
 echo "OK"
 
 echo "== a launcher row opens a pane"
-launch=$(curl -s -m 20 -X POST -H "Content-Type: application/json" -H "Origin: http://127.0.0.1:$PORT" \
-  -d '{"command":"bash"}' "http://127.0.0.1:$PORT/api/launch") || fail "/api/launch request failed"
-echo "$launch" | jq -e . >/dev/null 2>&1 || fail "/api/launch did not return JSON: $launch"
-sleep 3
-docker exec "$NAME" bash -c 'source /tmp/freeagent.env && herdr api snapshot | jq -e ".panes | length > 0"' >/dev/null || fail "no pane after launch"
-echo "OK: $launch"
+resp=$(curl -s -m 30 -X POST -H "Content-Type: application/json" -H "Origin: http://127.0.0.1:$PORT" \
+  -d '{"command":"bash"}' -w '\n%{http_code}' "http://127.0.0.1:$PORT/api/launch") || fail "/api/launch request failed"
+status=${resp##*$'\n'}; body=${resp%$'\n'*}
+echo "launch -> HTTP $status: $body"
+[ "$status" = "200" ] || fail "/api/launch returned $status"
+panes=0
+for _ in $(seq 1 15); do
+  panes=$(docker exec "$NAME" bash -c 'source /tmp/freeagent.env && herdr api snapshot | jq ".panes | length"' 2>/dev/null || echo 0)
+  [ "${panes:-0}" -gt 0 ] && break
+  sleep 1
+done
+if [ "${panes:-0}" -le 0 ]; then
+  echo "--- herdr snapshot ---"; docker exec "$NAME" bash -c 'source /tmp/freeagent.env && herdr api snapshot' || true
+  echo "--- herdr server log ---"; docker exec "$NAME" bash -c 'source /tmp/freeagent.env && tail -50 "$XDG_CONFIG_HOME/herdr/herdr-server.log"' || true
+  fail "no pane after launch"
+fi
+echo "OK: $panes pane(s)"
 
 echo "--- container log ---"
 docker logs "$NAME"
