@@ -111,7 +111,11 @@ WORKDIR /home/node/workspace
 # Herdr's lifecycle hooks for each agent, so pane state is reported by the agent itself rather than
 # inferred from the screen. Writes under $HOME (~/.claude/settings.json etc.), which is why this runs
 # as `node` after HOME is set and is baked into the image rather than done at boot.
-RUN herdr integration install claude \
+# Herdr refuses to install into an agent directory that does not exist yet ("install claude code
+# first"); the CLIs are installed but have never run, so create the dirs it checks for:
+# ~/.claude (CLAUDE_CONFIG_DIR), ~/.codex (CODEX_HOME), ~/.config/opencode (always HOME-relative).
+RUN mkdir -p /home/node/.claude /home/node/.codex /home/node/.config/opencode \
+    && herdr integration install claude \
     && herdr integration install codex \
     && herdr integration install opencode
 

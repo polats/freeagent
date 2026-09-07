@@ -111,6 +111,19 @@ fi
 # Installed at build time under $HOME, but the OpenCode plugin lives under the XDG config dir,
 # which the persistence block above may have moved to the state root. Re-running is idempotent
 # and cheap, and it keeps every agent's hooks pointing at this boot's paths.
+# Herdr writes the OpenCode plugin to ~/.config/opencode (HOME-relative, ignoring XDG), while
+# OpenCode itself reads $XDG_CONFIG_HOME/opencode — which the persistence block may have moved to
+# the state root. Point the former at the latter so both see one directory, carrying over anything
+# the build installed.
+if [ "$XDG_CONFIG_HOME" != "$HOME/.config" ] && [ ! -L "$HOME/.config/opencode" ]; then
+  mkdir -p "$XDG_CONFIG_HOME/opencode" "$HOME/.config"
+  if [ -d "$HOME/.config/opencode" ]; then
+    cp -rn "$HOME/.config/opencode/." "$XDG_CONFIG_HOME/opencode/" 2>/dev/null || true
+    rm -rf "$HOME/.config/opencode"
+  fi
+  ln -s "$XDG_CONFIG_HOME/opencode" "$HOME/.config/opencode"
+fi
+mkdir -p "$HOME/.claude" "$HOME/.codex"
 for agent in claude codex opencode; do
   herdr integration install "$agent" >/dev/null 2>&1 \
     || log "warning: herdr integration install $agent failed — $agent state will fall back to screen detection"
