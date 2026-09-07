@@ -18,6 +18,7 @@ FROM oven/bun:${BUN_VERSION}-slim AS bun
 FROM node:22-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      bubblewrap \
       ca-certificates \
       curl \
       git \

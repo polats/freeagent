@@ -130,15 +130,11 @@ if [ "$XDG_CONFIG_HOME" != "$HOME/.config" ] && [ ! -L "$HOME/.config/opencode" 
   fi
   ln -s "$XDG_CONFIG_HOME/opencode" "$HOME/.config/opencode"
 fi
-# Seed the agent homes from what the build installed (hooks, settings) the first time they land
-# somewhere new; never overwrite, so a login already stored there survives an image upgrade.
-for pair in "$HOME/.claude:$CLAUDE_CONFIG_DIR" "$HOME/.codex:$CODEX_HOME"; do
-  src="${pair%%:*}"; dst="${pair##*:}"
-  mkdir -p "$dst"
-  if [ "$src" != "$dst" ] && [ -d "$src" ]; then
-    cp -rn "$src/." "$dst/" 2>/dev/null || true
-  fi
-done
+# The agent homes are created empty and herdr installs its hooks into them below. Do NOT seed
+# them from the build-time copies under $HOME: those hooks point at $HOME paths, and herdr then
+# adds a second entry for the real path, so Codex asked to trust three hooks instead of two and
+# every session ran the state hook twice.
+mkdir -p "$CLAUDE_CONFIG_DIR" "$CODEX_HOME"
 for agent in claude codex opencode; do
   herdr integration install "$agent" >/dev/null 2>&1 \
     || log "warning: herdr integration install $agent failed — $agent state will fall back to screen detection"
