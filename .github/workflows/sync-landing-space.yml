@@ -1,0 +1,74 @@
+name: Sync landing Space
+
+# Publishes landing/ as a Hugging Face STATIC Space with hf_oauth enabled (see landing/README.md
+# front matter). The platform provisions the OAuth app for the Space's own host, so the page needs
+# no client id of ours. Secrets/vars: HF_TOKEN (write token), HF_LANDING_SPACE (owner/name; also
+# the on switch).
+
+on:
+  push:
+    branches: [main]
+    paths: ["landing/**", ".github/workflows/sync-landing-space.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: hf-landing-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: ${{ vars.HF_LANDING_SPACE != '' }}
+    runs-on: ubuntu-latest
+    env:
+      HF_SPACE: ${{ vars.HF_LANDING_SPACE }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve the Hugging Face account
+        id: who
+        run: |
+          [ -n "$HF_TOKEN" ] || { echo "::error::HF_TOKEN secret is not set"; exit 1; }
+          user=$(curl -s -f -H "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/whoami-v2 | jq -r '.name // empty')
+          [ -n "$user" ] || { echo "::error::HF_TOKEN was rejected by huggingface.co"; exit 1; }
+          echo "user=$user" >> "$GITHUB_OUTPUT"
+          echo "Authenticated as $user; landing Space is spaces/$HF_SPACE"
+
+      - name: Create the Space if it does not exist
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/spaces/$HF_SPACE")
+          if [ "$code" = "404" ]; then
+            name="${HF_SPACE#*/}"; org="${HF_SPACE%/*}"
+            body=$(jq -n --arg name "$name" --arg org "$org" --arg owner "${{ steps.who.outputs.user }}" \
+              '{type:"space", name:$name, sdk:"static", private:false} + (if $org != $owner then {organization:$org} else {} end)')
+            curl -s -f -X POST -H "Authorization: Bearer $HF_TOKEN" -H "Content-Type: application/json" -d "$body" https://huggingface.co/api/repos/create >/dev/null
+            echo "Created spaces/$HF_SPACE"
+          elif [ "$code" != "200" ]; then
+            echo "::error::GET /api/spaces/$HF_SPACE returned $code"; exit 1
+          fi
+
+      - name: Push landing/ as the Space's tree
+        run: |
+          # The Space gets ONLY the landing directory, as a fresh single-commit history: it is a
+          # publish target, not a mirror. The README's front matter is what configures the Space.
+          rm -rf /tmp/space && mkdir /tmp/space
+          rsync -a --exclude '.vercel' --exclude '.gitignore' --exclude '.env*' landing/ /tmp/space/
+          cd /tmp/space
+          git init -q -b main
+          git -c user.name=github-actions -c user.email=actions@github.com add -A
+          git -c user.name=github-actions -c user.email=actions@github.com commit -q -m "Publish landing page from ${GITHUB_SHA::7}"
+          git push --force "https://${{ steps.who.outputs.user }}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" \
+            "HEAD:refs/heads/main" 2>&1 | sed "s/${HF_TOKEN}/***/g"
+
+      - name: Wait for the Space to come up
+        run: |
+          for i in $(seq 1 40); do
+            stage=$(curl -s -m 20 -H "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/spaces/${HF_SPACE}/runtime" | jq -r '.stage // "UNKNOWN"')
+            echo "[$i] $stage"
+            case "$stage" in
+              RUNNING) echo "Landing Space is running."; exit 0 ;;
+              BUILD_ERROR|RUNTIME_ERROR|CONFIG_ERROR) echo "::error::Space ended in $stage"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::warning::Space did not reach RUNNING; last stage: $stage"

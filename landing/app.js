@@ -8,6 +8,14 @@
 
 const CFG = window.FREEAGENT;
 const HF = "https://huggingface.co";
+// On a Hugging Face static Space with `hf_oauth: true`, the platform injects the OAuth app it
+// provisioned for this exact host as `window.huggingface.variables` — no app to create by hand,
+// and the redirect URI cannot drift from the deployed URL. Elsewhere (Vercel, a custom domain)
+// config.js supplies a client id registered for that origin.
+const SPACE_VARS = window.huggingface?.variables ?? {};
+const CLIENT_ID = SPACE_VARS.OAUTH_CLIENT_ID || CFG.HF_CLIENT_ID;
+const SCOPES = SPACE_VARS.OAUTH_SCOPES || CFG.HF_SCOPES;
+const EMBEDDED = window.top !== window.self;
 const S = window.sessionStorage;
 
 const $ = (id) => document.getElementById(id);
@@ -27,8 +35,14 @@ async function sha256(text) {
 }
 
 async function startSignIn() {
-  if (!CFG.HF_CLIENT_ID || CFG.HF_CLIENT_ID.startsWith("REPLACE")) {
-    fail("This page is not configured yet: HF_CLIENT_ID is missing in config.js.");
+  if (!CLIENT_ID || CLIENT_ID.startsWith("REPLACE")) {
+    fail("This page is not configured yet: no OAuth client id (config.js HF_CLIENT_ID, or hf_oauth on the Space).");
+    return;
+  }
+  if (EMBEDDED) {
+    // Inside huggingface.co's Space iframe the sign-in cookies do not survive the round trip on
+    // some browsers (the Spaces OAuth docs say so). Break out to the direct host instead.
+    window.open(location.href, "_blank", "noopener");
     return;
   }
   const verifier = random(32);
@@ -36,10 +50,10 @@ async function startSignIn() {
   S.setItem("pkce", JSON.stringify({ verifier, state }));
   const url = new URL(`${HF}/oauth/authorize`);
   url.search = new URLSearchParams({
-    client_id: CFG.HF_CLIENT_ID,
+    client_id: CLIENT_ID,
     redirect_uri: redirectUri(),
     response_type: "code",
-    scope: CFG.HF_SCOPES,
+    scope: SCOPES,
     state,
     code_challenge: b64url(await sha256(verifier)),
     code_challenge_method: "S256",
@@ -59,7 +73,7 @@ async function finishSignIn(params) {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: CFG.HF_CLIENT_ID,
+      client_id: CLIENT_ID,
       grant_type: "authorization_code",
       code: params.get("code"),
       redirect_uri: redirectUri(),
