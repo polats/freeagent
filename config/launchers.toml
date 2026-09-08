@@ -2,21 +2,24 @@
 # command verbatim into a fresh shell in a new Space and sends Enter. This file IS the allowlist:
 # POST /api/launch accepts only a command that matches a row here exactly.
 #
-# Seeded once into $HERDR_PLUGIN_CONFIG_DIR/launchers.toml by entrypoint.sh; edit that copy.
-# Edits are picked up live. No cwd, so a tap opens in the workspace (dashboard) or in the
-# current pane's own folder (switcher).
+# Seeded once into $HERDR_PLUGIN_CONFIG_DIR/launchers.toml by entrypoint.sh, which fills in the
+# workspace path for `cwd`; `freeagent-clone` later points it at the repository it checked out.
+# Edits are picked up live.
 
 [[launchers]]
 command = "claude"
 label = "Claude Code"
+cwd = "__WORKSPACE__"
 
 [[launchers]]
 command = "codex"
 label = "Codex"
+cwd = "__WORKSPACE__"
 
 [[launchers]]
 command = "opencode"
 label = "OpenCode"
+cwd = "__WORKSPACE__"
 
 # Sign-in rows. Each agent's no-browser fallback prints a URL (Collie makes it tappable) and takes
 # a pasted code back in the pane. Credentials persist under the state root, so this is a one-time
@@ -36,3 +39,4 @@ label = "OpenCode: sign in"
 [[launchers]]
 command = "bash"
 label = "Shell"
+cwd = "__WORKSPACE__"

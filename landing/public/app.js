@@ -209,7 +209,22 @@ async function connect(b) {
     for (let i = 20; i > 0; i -= 1) { setBusy(b.id, `Starting Herdr and Collie… ${i}s`); await sleep(1000); }
   }
   setBusy(b.id, null);
-  location.assign(b.p === "hf" && b.token ? `${b.url}#token=${b.token}${b.repo ? `&repo=${b.repo}` : ""}` : b.repo ? `${b.url}#repo=${b.repo}` : b.url);
+  location.assign(handoffUrl(b));
+}
+
+// What the box needs on first open, in the URL fragment (never sent to the server, stripped by the
+// PWA once consumed): an HF box's Collie token; a codespace's repo to clone, plus the GitHub token
+// when that repo is private. An HF box clones at boot from FREEAGENT_REPO, so it gets no repo here.
+function handoffUrl(b) {
+  const frag = new URLSearchParams();
+  if (b.p === "hf" && b.token) frag.set("token", b.token);
+  if (b.p === "github" && b.repo && !b.cloned) {
+    frag.set("repo", b.repo);
+    if (b.priv && tokenOf("github")) frag.set("gh", tokenOf("github"));
+    setBoxMeta(b.id, { cloned: true }); // once is enough; a reload must not clone twice
+  }
+  const q = frag.toString();
+  return q ? `${b.url}#${q}` : b.url;
 }
 
 function confirmDelete(b) {
@@ -285,6 +300,7 @@ async function loadRepos() {
   }
   repos = all;
 }
+const repoIsPrivate = (full) => Boolean(repos?.find((r) => r.full === full)?.priv);
 
 function openRepoSearch() {
   $("create-form").hidden = true; $("repo-search").hidden = false;
@@ -315,7 +331,7 @@ async function submitCreate(ev) {
   $("create-submit").disabled = true; $("create-error").textContent = "";
   try {
     const id = p === "github" ? await createCodespace(name) : await createSpace(name);
-    if (pickedRepo) setBoxMeta(id, { repo: pickedRepo });
+    if (pickedRepo) setBoxMeta(id, { repo: pickedRepo, priv: repoIsPrivate(pickedRepo) });
     $("create").close();
     await refresh();
   } catch (e) {
@@ -343,7 +359,8 @@ async function createSpace(name) {
         repository: id,
         visibility: $("create-visibility").value,
         hardware: "cpu-basic",
-        secrets: [{ key: "COLLIE_AUTH_TOKEN", value: collieToken }],
+        // A private repository is cloned at boot with the GitHub token; a public one needs none.
+        secrets: [{ key: "COLLIE_AUTH_TOKEN", value: collieToken }, ...(pickedRepo && repoIsPrivate(pickedRepo) && tokenOf("github") ? [{ key: "GITHUB_TOKEN", value: tokenOf("github") }] : [])],
         variables: pickedRepo ? [{ key: "FREEAGENT_REPO", value: pickedRepo }] : [],
       }),
     });

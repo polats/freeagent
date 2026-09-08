@@ -44,7 +44,7 @@ echo "OK"
 
 echo "== boots with the token and serves the API and the PWA"
 docker run -d --name "$NAME" -p "$PORT:7860" \
-  -e FREEAGENT_ALLOW_ANY_HOST=1 -e COLLIE_AUTH_TOKEN="$TOKEN" "$IMAGE" >/dev/null
+  -e FREEAGENT_ALLOW_ANY_HOST=1 -e COLLIE_AUTH_TOKEN="$TOKEN" -e FREEAGENT_REPO=polats/opencode-cloud "$IMAGE" >/dev/null
 AUTH="Authorization: Bearer $TOKEN"
 
 code=""
@@ -97,6 +97,20 @@ if [ "${panes:-0}" -le 0 ]; then
   fail "no pane after launch"
 fi
 echo "OK: $panes pane(s)"
+
+echo "== FREEAGENT_REPO was cloned at boot and the launchers point at it"
+docker exec "$NAME" bash -c 'test -d "$HOME/workspace/opencode-cloud/.git" && grep -q "workspace/opencode-cloud" "$HOME/.config/collie/launchers.toml"' || fail "boot clone missing or launchers not repointed"
+echo "OK"
+
+echo "== /api/checkout clones a second repo in a visible pane"
+resp=$(curl -s -m 60 -X POST -H "Content-Type: application/json" -H "$AUTH" -d '{"repo":"polats/freeagent"}' -w '\n%{http_code}' "http://127.0.0.1:$PORT/api/checkout") || fail "/api/checkout request failed"
+status=${resp##*$'\n'}; body=${resp%$'\n'*}; echo "checkout -> HTTP $status: $body"
+[ "$status" = "200" ] || fail "/api/checkout returned $status"
+pane=$(echo "$body" | jq -r '.pane.paneId // empty'); [ -n "$pane" ] || fail "no pane in checkout reply"
+for _ in $(seq 1 30); do docker exec "$NAME" bash -c 'test -d "$HOME/workspace/freeagent/.git"' && break; sleep 2; done
+docker exec "$NAME" bash -c 'test -d "$HOME/workspace/freeagent/.git"' || { docker exec "$NAME" bash -c "source /tmp/freeagent.env && herdr pane read $pane --format text" || true; fail "checkout did not produce a clone"; }
+curl -s -m 30 -X POST -H "Content-Type: application/json" -H "$AUTH" -d '{"repo":"../etc"}' -o /dev/null -w "bad repo id -> HTTP %{http_code}\n" "http://127.0.0.1:$PORT/api/checkout" | grep -q "400" || fail "a bad repo id was not refused"
+echo "OK: clone landed via pane $pane"
 
 echo "--- container log ---"
 docker logs "$NAME"

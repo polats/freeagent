@@ -106,6 +106,7 @@ COPY --chown=node:node bin/ /opt/freeagent/bin/
 COPY --chown=node:node template/ /opt/freeagent/template/
 RUN chmod +x /home/node/entrypoint.sh /opt/freeagent/bin/* \
     && ln -s /opt/freeagent/bin/freeagent-pair /usr/local/bin/freeagent-pair \
+    && ln -s /opt/freeagent/bin/freeagent-clone /usr/local/bin/freeagent-clone \
     && mkdir -p /home/node/workspace \
     && chown -R node:node /home/node /opt/collie
 

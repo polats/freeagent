@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Clone a GitHub repository into the workspace and make it the place agents open.
+#
+#   freeagent-clone owner/name          from a pane (Collie's /api/checkout types exactly this):
+#                                       clone, point the Launch buttons at it, drop into a shell there
+#   freeagent-clone --boot owner/name   from entrypoint.sh (FREEAGENT_REPO): clone and return
+#
+# Token, for private repositories: $FREEAGENT_STATE_ROOT/github-token (written 0600 by Collie's
+# checkout route) or $GITHUB_TOKEN. It is fed to git through a credential helper, never put in the
+# remote URL or the command line, and the same helper is installed for later pushes.
+set -euo pipefail
+
+boot=0
+if [ "${1:-}" = "--boot" ]; then boot=1; shift; fi
+repo="${1:-}"
+if ! [[ "$repo" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9_.-]{1,100}$ ]] || [[ "$repo" == */.. || "$repo" == ../* ]]; then
+  echo "freeagent-clone: expected owner/name, got '${repo}'" >&2; exit 2
+fi
+
+# The resolved environment entrypoint.sh wrote, so a pane and the boot path agree on paths.
+[ -f /tmp/freeagent.env ] && source /tmp/freeagent.env
+WORKSPACE="${FREEAGENT_WORKSPACE:-$HOME/workspace}"
+STATE_ROOT="${FREEAGENT_STATE_ROOT:-/data}"
+TOKEN_FILE="$STATE_ROOT/github-token"
+name="${repo#*/}"; name="${name%.git}"
+dir="$WORKSPACE/$name"
+
+token=""
+if [ -s "$TOKEN_FILE" ]; then token="$(tr -d '\r\n' < "$TOKEN_FILE")"; elif [ -n "${GITHUB_TOKEN:-}" ]; then token="$GITHUB_TOKEN"; fi
+if [ -n "$token" ]; then
+  # A credential helper that reads the file on every use: rotate the token by rewriting the file.
+  git config --global credential.helper "!f(){ echo username=x-access-token; echo \"password=\$(cat '$TOKEN_FILE' 2>/dev/null || echo \"\${GITHUB_TOKEN:-}\")\"; }; f"
+  [ -s "$TOKEN_FILE" ] || printf '%s' "$token" > "$TOKEN_FILE"; chmod 600 "$TOKEN_FILE" 2>/dev/null || true
+fi
+
+mkdir -p "$WORKSPACE"
+if [ -d "$dir/.git" ]; then
+  echo "freeagent-clone: $dir already exists — using it"
+else
+  rmdir "$dir" 2>/dev/null || true
+  echo "freeagent-clone: cloning $repo into $dir"
+  git clone --depth 1 "https://github.com/$repo.git" "$dir"
+fi
+
+# Point Collie's Launch buttons at the checkout so a new agent opens inside it. Read live by Collie.
+LAUNCHERS="${HERDR_PLUGIN_CONFIG_DIR:-$HOME/.config/collie}/launchers.toml"
+if [ -f "$LAUNCHERS" ]; then
+  sed -i "s#^cwd = .*#cwd = \"$dir\"#" "$LAUNCHERS"
+fi
+
+if [ "$boot" = 1 ]; then exit 0; fi
+cd "$dir"
+echo "freeagent-clone: ready in $dir — tap a launcher to start an agent here"
+exec "${SHELL:-/bin/bash}"

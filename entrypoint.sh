@@ -131,8 +131,9 @@ git config --global --add safe.directory '*' 2>/dev/null || true
 # Seed Collie's launcher rows (the phone's Launch buttons: claude, codex, opencode) once.
 # Operators can edit the copy under the state root; edits are picked up live.
 if [ ! -f "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml" ]; then
-  cp /opt/freeagent/config/launchers.toml "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml"
+  sed "s#__WORKSPACE__#$WORKSPACE#g" /opt/freeagent/config/launchers.toml > "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml"
 fi
+export FREEAGENT_WORKSPACE="$WORKSPACE" FREEAGENT_STATE_ROOT="$STATE_ROOT"
 
 # --- herdr agent integrations -------------------------------------------------------------
 # Installed at build time under $HOME, but the OpenCode plugin lives under the XDG config dir,
@@ -223,6 +224,17 @@ if [ -z "${COLLIE_VAPID_PUBLIC:-}" ] && [ -z "${COLLIE_VAPID_PRIVATE:-}" ]; then
   fi
 fi
 
+# --- start from a repository -------------------------------------------------------------------
+# Two ways a repo reaches the box. FREEAGENT_REPO (a Space variable, or any env) clones at boot.
+# Collie's checkout route (COLLIE_CHECKOUT_*) clones on request from the phone — the only way for a
+# codespace, which has no per-box variables — running `freeagent-clone` in a pane so it is visible.
+export COLLIE_CHECKOUT_COMMAND="freeagent-clone"
+export COLLIE_CHECKOUT_CWD="$WORKSPACE"
+export COLLIE_CHECKOUT_TOKEN_FILE="$STATE_ROOT/github-token"
+if [ -n "${FREEAGENT_REPO:-}" ]; then
+  if freeagent-clone --boot "$FREEAGENT_REPO"; then log "repo: $FREEAGENT_REPO checked out"; else log "warning: could not clone $FREEAGENT_REPO (private? set GITHUB_TOKEN) — continuing"; fi
+fi
+
 # --- collie ------------------------------------------------------------------------------
 # Variant "public PaaS": no tailscale serve, bind every interface, Host/Origin pinned above.
 export COLLIE_MUX=herdr
@@ -236,7 +248,7 @@ export COLLIE_TRUSTED_USER_OPTIONAL=1
 {
   for v in HERDR_SOCKET_PATH XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME XDG_CACHE_HOME \
            COLLIE_STATE_DIR HERDR_PLUGIN_CONFIG_DIR COLLIE_MUX COLLIE_HOST COLLIE_PORT \
-           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST COLLIE_AUTH_TOKEN; do
+           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST COLLIE_AUTH_TOKEN COLLIE_CHECKOUT_COMMAND COLLIE_CHECKOUT_CWD COLLIE_CHECKOUT_TOKEN_FILE FREEAGENT_WORKSPACE FREEAGENT_STATE_ROOT; do
     [ -n "${!v:-}" ] && printf 'export %s=%q\n' "$v" "${!v}"
   done
 } > /tmp/freeagent.env
