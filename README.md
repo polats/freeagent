@@ -44,6 +44,14 @@ creates boxes through the providers' own APIs and lists, opens and deletes the o
 The token is a root credential to a shell. The entrypoint refuses to start without one on any
 platform whose URL is public; Codespaces are the exception because the port is already private.
 
+## Starting from a repository
+
+Pick a repository when creating a box and the box clones it before you arrive. A Hugging Face Space
+gets `FREEAGENT_REPO` as a variable (and, for a private repository, `GITHUB_TOKEN` as a secret) and
+clones at boot. A codespace has no per-box variables, so the landing page passes `#repo=owner/name`
+to Collie, which runs `freeagent-clone` in a pane you can watch. Either way the Launch buttons then
+open agents inside the checkout, and a credential helper lets them push.
+
 ## Signing in to the agents
 
 Agents use your existing subscription, not API keys. A container has no browser, so each agent's
@@ -65,6 +73,7 @@ Dockerfile, entrypoint.sh   the box image: herdr + collie + agents, one entrypoi
 .devcontainer/              the same image as a GitHub Codespace (port 7860, private)
 config/launchers.toml       the phone's Launch buttons (agents, sign-ins, shell)
 bin/freeagent-pair          issue a Collie pairing code from inside the box
+bin/freeagent-clone         clone owner/name into the workspace and point the launchers at it
 template/                   the notice the template Space serves (FREEAGENT_TEMPLATE=1)
 hf-space/README.md          the template Space's own README and configuration
 landing/                    the landing page (Cloudflare Pages)
@@ -93,6 +102,7 @@ as a secret before the first boot and mount a volume at `/data`.
 | `FREEAGENT_PUBLIC_HOST` | platform-derived | Hostname Collie is served on, from `SPACE_HOST`, `RAILWAY_PUBLIC_DOMAIN` or the Codespace name. |
 | `FREEAGENT_ALLOW_ANY_HOST` | — | `1` to skip Host validation (local docker only). |
 | `FREEAGENT_STATE_ROOT` | `/data` | Writable mount for herdr, collie, agent sign-ins and the workspace. |
+| `FREEAGENT_REPO` | — | `owner/name` to clone at boot; `GITHUB_TOKEN` alongside it for a private repository. |
 | `FREEAGENT_TEMPLATE` | — | `1` serves the template notice and starts nothing. |
 
 Build args pin versions: `HERDR_VERSION` (+ sha256s), `COLLIE_REF`, `BUN_VERSION`,
