@@ -61,6 +61,15 @@
     <button id="new-hf" class="ghost" hidden>New Hugging Face Space</button>
   </section>
 
+  <section data-step="device" hidden>
+    <h1>Sign in to GitHub</h1>
+    <p>Enter this code on GitHub, then come back here. This page will notice on its own.</p>
+    <p style="text-align:center;font-size:2rem;letter-spacing:.15em;margin:1rem 0"><code id="device-code"></code></p>
+    <a id="device-link" class="btn primary" href="https://github.com/login/device" target="_blank" rel="noopener">Open github.com/login/device</a>
+    <button class="ghost" id="device-copy">Copy code</button>
+    <button class="ghost" id="device-back">Cancel</button>
+  </section>
+
   <section data-step="busy" hidden>
     <div class="spinner"></div>
     <h1 id="busy-title"></h1>
@@ -96,7 +105,7 @@
   </section>
 
 </div>
-<script src="config.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=dev"></script>
+<script src="app.js?v=dev"></script>
 </body>
 </html>

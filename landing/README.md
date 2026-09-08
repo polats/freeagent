@@ -5,15 +5,15 @@ box in **your** account — a GitHub Codespace, or a Hugging Face Space duplicat
 template — then opens it. It also lists, opens and deletes the boxes you already have.
 
 No database, no accounts of ours. Tokens stay in the visitor's browser. The one piece of server code
-is a Cloudflare Pages Function that swaps an OAuth code for a token, because that step needs the
-OAuth app's client secret.
+is a Cloudflare Pages Function that relays the OAuth token requests, because those endpoints send no
+CORS headers and Hugging Face's needs the app's client secret.
 
 ```
 public/index.html                          the page
 public/app.js                              sign-in, list/open/delete, create
 public/config.js                           template repo and Space, machine size
 public/_headers                            security headers, no-cache on the app files
-functions/api/auth/[provider]/[action].js  GET …/config and POST …/token for github and hf
+functions/api/auth/[provider]/[action].js  github device flow (device, poll) · hf code exchange (token) · config
 wrangler.toml
 ```
 
@@ -24,13 +24,14 @@ optional: the page only offers the ones whose secrets are set.
 
 1. **Fork or copy this directory.** Edit `public/config.js` if your box image lives elsewhere.
 
-2. **GitHub OAuth App** — GitHub → Settings → Developer settings → OAuth Apps → New.
-   Authorization callback URL: your site's root URL with a trailing slash, e.g.
-   `https://freeagent.example.com/`. Note the client id and generate a client secret.
+2. **GitHub OAuth App** — GitHub → Settings → Developer settings → OAuth Apps → New. Fill the
+   callback URL with your site's root (GitHub requires one) and tick **Enable Device Flow**. The
+   page uses the device flow: no redirect to get wrong, and no client secret needed. Note the
+   client id.
 
 3. **Hugging Face OAuth app** — huggingface.co → Settings → Developer applications → New.
-   Redirect URI: the same root URL. Scopes: `openid`, `profile`, `manage-repos`. Note the client id
-   and secret.
+   Redirect URI: your site's root URL with a trailing slash, e.g. `https://freeagent.example.com/`.
+   Scopes: `openid`, `profile`, `manage-repos`. Note the client id and secret.
 
 4. **Deploy to Cloudflare Pages.**
 
@@ -38,15 +39,14 @@ optional: the page only offers the ones whose secrets are set.
    cd landing
    npx wrangler login                                  # or set CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
    npx wrangler pages project create freeagent --production-branch main
-   npx wrangler pages secret put GITHUB_CLIENT_ID     --project-name freeagent
-   npx wrangler pages secret put GITHUB_CLIENT_SECRET --project-name freeagent
-   npx wrangler pages secret put HF_CLIENT_ID         --project-name freeagent
-   npx wrangler pages secret put HF_CLIENT_SECRET     --project-name freeagent
+   npx wrangler pages secret put GITHUB_CLIENT_ID --project-name freeagent
+   npx wrangler pages secret put HF_CLIENT_ID     --project-name freeagent
+   npx wrangler pages secret put HF_CLIENT_SECRET --project-name freeagent
    npx wrangler pages deploy public --project-name freeagent
    ```
 
-   Add your domain under the project's Custom domains, and make sure the OAuth apps' callback URLs
-   use that exact domain.
+   Add your domain under the project's Custom domains, and make sure the Hugging Face app's redirect
+   URI uses that exact domain.
 
 5. **If your domain is proxied by Cloudflare**, add a Cache Rule for the hostname with browser and
    edge TTL set to "respect origin", or visitors may keep an old `app.js` for hours.
@@ -60,4 +60,4 @@ optional: the page only offers the ones whose secrets are set.
 cd landing && npx wrangler pages dev public
 ```
 
-Point a second OAuth app (or extra callback URIs) at `http://localhost:8788/` for local sign-in.
+Add `http://localhost:8788/` to the Hugging Face app's redirect URIs for local sign-in; GitHub's device flow needs nothing.

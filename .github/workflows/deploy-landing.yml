@@ -27,4 +27,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx -y wrangler@latest pages deploy public --project-name freeagent --branch main --commit-dirty=true
+        run: |
+          # Stamp the script URLs so a proxy that caches *.js for hours still serves the new code.
+          sed -i "s/?v=dev/?v=${GITHUB_SHA::7}/g" public/index.html
+          npx -y wrangler@latest pages deploy public --project-name freeagent --branch main --commit-dirty=true

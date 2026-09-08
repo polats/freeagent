@@ -1,59 +1,62 @@
-// The only server code: /api/auth/<github|hf>/config and /api/auth/<github|hf>/token.
+// The only server code, under /api/auth/<provider>/<action>. A static page can start a sign-in but
+// cannot finish one: the token endpoints send no CORS headers, and Hugging Face's needs the app's
+// client secret. This Cloudflare Pages Function fills that gap and stores nothing.
 //
-// A static page can start an OAuth sign-in, but it cannot finish one: the token endpoints need the
-// app's client secret, and GitHub's sends no CORS headers. So this Cloudflare Pages Function holds
-// the two secrets and does the exchange. It stores nothing.
+//   GitHub — device flow (no redirect URI, no client secret; tick "Enable Device Flow" on the app):
+//     POST /api/auth/github/device            → { user_code, verification_uri, device_code, interval, expires_in }
+//     POST /api/auth/github/poll {device_code} → { access_token } | { error: "authorization_pending" | … }
+//   Hugging Face — authorization code with the app secret; callback = this site's root URL:
+//     POST /api/auth/hf/token {code}          → { access_token }
+//   Either — GET /api/auth/<provider>/config  → { client_id } when configured, else 404.
 //
-// Secrets on the Pages project:  GITHUB_CLIENT_ID  GITHUB_CLIENT_SECRET  HF_CLIENT_ID  HF_CLIENT_SECRET
-// Both OAuth apps must have this site's root URL (with trailing slash) as their callback.
+// Secrets on the Pages project: GITHUB_CLIENT_ID, HF_CLIENT_ID, HF_CLIENT_SECRET.
 
-const PROVIDERS = {
-  github: {
-    id: "GITHUB_CLIENT_ID",
-    secret: "GITHUB_CLIENT_SECRET",
-    tokenUrl: "https://github.com/login/oauth/access_token",
-  },
-  hf: {
-    id: "HF_CLIENT_ID",
-    secret: "HF_CLIENT_SECRET",
-    tokenUrl: "https://huggingface.co/oauth/token",
-  },
-};
+const GH = "https://github.com";
+const HF = "https://huggingface.co";
+const json = (data, status = 200) => Response.json(data, { status, headers: { "cache-control": "no-store" } });
 
 export async function onRequest({ request, env, params }) {
-  const p = PROVIDERS[params.provider];
-  if (!p) return new Response("not found", { status: 404 });
-  const clientId = env[p.id];
-  const clientSecret = env[p.secret];
-  if (!clientId || !clientSecret) return new Response("not configured", { status: 404 });
+  const { provider, action } = params;
+  const self = new URL(request.url).origin;
+  const origin = request.headers.get("origin");
+  if (request.method === "POST" && origin !== null && origin !== self) return new Response("forbidden", { status: 403 });
+  const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
 
-  if (params.action === "config" && request.method === "GET") {
-    return Response.json({ client_id: clientId }, { headers: { "cache-control": "no-store" } });
+  if (provider === "github") {
+    if (!env.GITHUB_CLIENT_ID) return new Response("not configured", { status: 404 });
+    if (action === "config" && request.method === "GET") return json({ client_id: env.GITHUB_CLIENT_ID });
+    if (action === "device" && request.method === "POST") {
+      return forward(`${GH}/login/device/code`, { client_id: env.GITHUB_CLIENT_ID, scope: "codespace" });
+    }
+    if (action === "poll" && request.method === "POST" && typeof body.device_code === "string") {
+      return forward(`${GH}/login/oauth/access_token`, {
+        client_id: env.GITHUB_CLIENT_ID,
+        device_code: body.device_code,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      });
+    }
   }
 
-  if (params.action === "token" && request.method === "POST") {
-    const self = new URL(request.url).origin;
-    const origin = request.headers.get("origin");
-    if (origin !== null && origin !== self) return new Response("forbidden", { status: 403 });
-    const body = await request.json().catch(() => null);
-    const code = typeof body?.code === "string" ? body.code : "";
-    if (!code) return new Response("bad request", { status: 400 });
-
-    const res = await fetch(p.tokenUrl, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/x-www-form-urlencoded",
-        authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
-      },
-      body: new URLSearchParams({ client_id: clientId, grant_type: "authorization_code", code, redirect_uri: `${self}/` }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.access_token) {
-      return Response.json({ error: json.error_description || json.error || "exchange_failed" }, { status: 400 });
+  if (provider === "hf") {
+    if (!env.HF_CLIENT_ID || !env.HF_CLIENT_SECRET) return new Response("not configured", { status: 404 });
+    if (action === "config" && request.method === "GET") return json({ client_id: env.HF_CLIENT_ID });
+    if (action === "token" && request.method === "POST" && typeof body.code === "string") {
+      return forward(`${HF}/oauth/token`, { grant_type: "authorization_code", code: body.code, redirect_uri: `${self}/` }, {
+        authorization: `Basic ${btoa(`${env.HF_CLIENT_ID}:${env.HF_CLIENT_SECRET}`)}`,
+      });
     }
-    return Response.json({ access_token: json.access_token }, { headers: { "cache-control": "no-store" } });
   }
 
   return new Response("not found", { status: 404 });
+}
+
+// Forward one form POST and hand the JSON reply back, whatever it says (the page reads `error`).
+async function forward(url, form, headers = {}) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded", ...headers },
+    body: new URLSearchParams(form),
+  });
+  const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+  return json(data, res.ok ? 200 : 400);
 }

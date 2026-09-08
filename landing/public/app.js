@@ -4,8 +4,8 @@
 
 const CFG = window.FREEAGENT;
 const API = { github: "https://api.github.com", hf: "https://huggingface.co" };
-const AUTHORIZE = { github: "https://github.com/login/oauth/authorize", hf: "https://huggingface.co/oauth/authorize" };
-const SCOPE = { github: "codespace", hf: "openid profile manage-repos" };
+const AUTHORIZE = { hf: "https://huggingface.co/oauth/authorize" };
+const SCOPE = { hf: "openid profile manage-repos" };
 const LABEL = { github: "GitHub", hf: "Hugging Face" };
 
 const $ = (id) => document.getElementById(id);
@@ -25,29 +25,56 @@ async function detect(p) {
   available[p] = res?.ok ? (await res.json()).client_id : null;
 }
 
-function signIn(p, intent) {
-  const state = randomToken();
-  sessionStorage.setItem("oauth", JSON.stringify({ p, state, intent }));
-  const params = { client_id: available[p], redirect_uri: `${location.origin}/`, scope: SCOPE[p], state };
-  if (p === "hf") params.response_type = "code";
-  location.assign(`${AUTHORIZE[p]}?${new URLSearchParams(params)}`);
+// GitHub: device flow. No redirect URI to get wrong — the page shows a code, the user enters it on
+// github.com, and the page polls until GitHub hands over the token.
+async function signInGitHub(intent) {
+  const start = await (await fetch("/api/auth/github/device", { method: "POST" })).json();
+  if (start.error) throw new Error(`GitHub device flow: ${start.error_description || start.error}. Is "Enable Device Flow" ticked on the OAuth App?`);
+  $("device-code").textContent = start.user_code;
+  $("device-link").href = start.verification_uri;
+  show("device");
+  const deadline = Date.now() + start.expires_in * 1000;
+  let interval = (start.interval || 5) * 1000;
+  while (Date.now() < deadline) {
+    await sleep(interval);
+    if (document.querySelector('[data-step="device"]').hidden) return; // user backed out
+    const res = await (await fetch("/api/auth/github/poll", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ device_code: start.device_code }),
+    })).json();
+    if (res.access_token) {
+      localStorage.setItem("freeagent:github", res.access_token);
+      await whoami("github");
+      return intent === "create" && user.github ? nameStep("github") : home();
+    }
+    if (res.error === "slow_down") interval += 5000;
+    else if (res.error !== "authorization_pending") throw new Error(`GitHub: ${res.error_description || res.error}`);
+  }
+  throw new Error("The code expired before it was entered. Try again.");
 }
 
-async function finishSignIn(params) {
+// Hugging Face: authorization code. The callback is this site's root URL.
+function signInHF(intent) {
+  const state = randomToken();
+  sessionStorage.setItem("oauth", JSON.stringify({ state, intent }));
+  const params = { client_id: available.hf, redirect_uri: `${location.origin}/`, response_type: "code", scope: SCOPE.hf, state };
+  location.assign(`${AUTHORIZE.hf}?${new URLSearchParams(params)}`);
+}
+
+async function finishHF(params) {
   const tx = JSON.parse(sessionStorage.getItem("oauth") ?? "null");
   sessionStorage.removeItem("oauth");
   history.replaceState(null, "", "/");
   if (!tx || tx.state !== params.get("state")) throw new Error("Sign-in did not start here. Please try again.");
-  const res = await fetch(`/api/auth/${tx.p}/token`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code: params.get("code") }),
+  const res = await fetch("/api/auth/hf/token", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: params.get("code") }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`${LABEL[tx.p]} refused the sign-in: ${body.error ?? res.status}`);
-  localStorage.setItem(`freeagent:${tx.p}`, body.access_token);
+  if (!res.ok || !body.access_token) throw new Error(`Hugging Face refused the sign-in: ${body.error_description || body.error || res.status}`);
+  localStorage.setItem("freeagent:hf", body.access_token);
   return tx;
 }
+
+const signIn = (p, intent) => (p === "github" ? signInGitHub(intent) : Promise.resolve(signInHF(intent)));
 
 function signOut(p) {
   localStorage.removeItem(`freeagent:${p}`);
@@ -233,10 +260,12 @@ async function home() {
 
 async function main() {
   for (const p of ["github", "hf"]) {
-    $(`${p}-signin`).onclick = () => signIn(p, "home");
+    $(`${p}-signin`).onclick = () => signIn(p, "home").catch((e) => fail(e.message));
     $(`${p}-signout`).onclick = () => { signOut(p); home(); };
-    $(`new-${p}`).onclick = () => (user[p] ? nameStep(p) : signIn(p, "create"));
+    $(`new-${p}`).onclick = () => (user[p] ? nameStep(p) : signIn(p, "create").catch((e) => fail(e.message)));
   }
+  $("device-back").onclick = home;
+  $("device-copy").onclick = () => navigator.clipboard?.writeText($("device-code").textContent).then(() => { $("device-copy").textContent = "Copied"; });
   $("name-back").onclick = home;
   $("done-home").onclick = home;
   $("error-home").onclick = home;
@@ -248,8 +277,8 @@ async function main() {
   if (params.get("error")) { history.replaceState(null, "", "/"); return fail(`Sign-in failed: ${params.get("error_description") ?? params.get("error")}`); }
   if (params.get("code")) {
     show("busy"); $("busy-title").textContent = "Signing you in…";
-    const tx = await finishSignIn(params);
-    if (tx.intent === "create") { await whoami(tx.p); if (user[tx.p]) return nameStep(tx.p); }
+    const tx = await finishHF(params);
+    if (tx.intent === "create") { await whoami("hf"); if (user.hf) return nameStep("hf"); }
   }
   await home();
 }
