@@ -47,6 +47,10 @@
       <div><strong>GitHub</strong><div class="who" id="github-who"></div></div>
       <div><button class="small ghost" id="github-signin">Sign in</button><button class="small ghost" id="github-signout" hidden>Sign out</button></div>
     </div>
+    <details id="github-details" hidden><summary class="who" style="cursor:pointer">GitHub sign-in details</summary>
+      <p class="who" id="github-details-text"></p>
+      <p class="who">If GitHub refuses the redirect, check the OAuth App has exactly this callback URL. Or <a href="#" id="github-device">sign in with a code instead</a>.</p>
+    </details>
     <div class="row" id="hf-row" hidden>
       <div><strong>Hugging Face</strong><div class="who" id="hf-who"></div></div>
       <div><button class="small ghost" id="hf-signin">Sign in</button><button class="small ghost" id="hf-signout" hidden>Sign out</button></div>

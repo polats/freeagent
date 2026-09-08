@@ -2,14 +2,15 @@
 // cannot finish one: the token endpoints send no CORS headers, and Hugging Face's needs the app's
 // client secret. This Cloudflare Pages Function fills that gap and stores nothing.
 //
-//   GitHub — device flow (no redirect URI, no client secret; tick "Enable Device Flow" on the app):
+//   GitHub — authorization code (callback = this site's root URL) with the device flow as a fallback:
+//     POST /api/auth/github/token {code}      → { access_token }                       (needs GITHUB_CLIENT_SECRET)
 //     POST /api/auth/github/device            → { user_code, verification_uri, device_code, interval, expires_in }
 //     POST /api/auth/github/poll {device_code} → { access_token } | { error: "authorization_pending" | … }
 //   Hugging Face — authorization code with the app secret; callback = this site's root URL:
 //     POST /api/auth/hf/token {code}          → { access_token }
 //   Either — GET /api/auth/<provider>/config  → { client_id } when configured, else 404.
 //
-// Secrets on the Pages project: GITHUB_CLIENT_ID, HF_CLIENT_ID, HF_CLIENT_SECRET.
+// Secrets on the Pages project: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, HF_CLIENT_ID, HF_CLIENT_SECRET.
 
 const GH = "https://github.com";
 const HF = "https://huggingface.co";
@@ -24,7 +25,17 @@ export async function onRequest({ request, env, params }) {
 
   if (provider === "github") {
     if (!env.GITHUB_CLIENT_ID) return new Response("not configured", { status: 404 });
-    if (action === "config" && request.method === "GET") return json({ client_id: env.GITHUB_CLIENT_ID });
+    if (action === "config" && request.method === "GET") {
+      return json({ client_id: env.GITHUB_CLIENT_ID, redirect_uri: `${self}/`, redirect: Boolean(env.GITHUB_CLIENT_SECRET) });
+    }
+    if (action === "token" && request.method === "POST" && typeof body.code === "string" && env.GITHUB_CLIENT_SECRET) {
+      return forward(`${GH}/login/oauth/access_token`, {
+        client_id: env.GITHUB_CLIENT_ID,
+        client_secret: env.GITHUB_CLIENT_SECRET,
+        code: body.code,
+        redirect_uri: `${self}/`,
+      });
+    }
     if (action === "device" && request.method === "POST") {
       return forward(`${GH}/login/device/code`, { client_id: env.GITHUB_CLIENT_ID, scope: "codespace" });
     }

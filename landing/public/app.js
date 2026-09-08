@@ -20,12 +20,23 @@ const available = {}; // provider -> client id, when this host has its secrets c
 const user = {}; // provider -> username, when signed in
 
 // ---- Sign in / out --------------------------------------------------------------------------------
+const config = {}; // provider -> the /config reply
 async function detect(p) {
   const res = await fetch(`/api/auth/${p}/config`).catch(() => null);
-  available[p] = res?.ok ? (await res.json()).client_id : null;
+  config[p] = res?.ok ? await res.json() : null;
+  available[p] = config[p]?.client_id ?? null;
 }
 
-// GitHub: device flow. No redirect URI to get wrong — the page shows a code, the user enters it on
+// GitHub, default: authorization code — one tap, GitHub bounces straight back here. The callback
+// registered on the OAuth App must be exactly this site's root URL.
+function signInGitHubRedirect(intent) {
+  const state = randomToken();
+  sessionStorage.setItem("oauth", JSON.stringify({ p: "github", state, intent }));
+  const params = { client_id: available.github, redirect_uri: config.github.redirect_uri, scope: "codespace", state };
+  location.assign(`https://github.com/login/oauth/authorize?${new URLSearchParams(params)}`);
+}
+
+// GitHub, fallback: device flow. No redirect URI to get wrong — the page shows a code, the user enters it on
 // github.com, and the page polls until GitHub hands over the token.
 async function signInGitHub(intent) {
   const start = await (await fetch("/api/auth/github/device", { method: "POST" })).json();
@@ -55,26 +66,30 @@ async function signInGitHub(intent) {
 // Hugging Face: authorization code. The callback is this site's root URL.
 function signInHF(intent) {
   const state = randomToken();
-  sessionStorage.setItem("oauth", JSON.stringify({ state, intent }));
+  sessionStorage.setItem("oauth", JSON.stringify({ p: "hf", state, intent }));
   const params = { client_id: available.hf, redirect_uri: `${location.origin}/`, response_type: "code", scope: SCOPE.hf, state };
   location.assign(`${AUTHORIZE.hf}?${new URLSearchParams(params)}`);
 }
 
-async function finishHF(params) {
+// Both redirect flows come back to "/?code=…&state=…"; the saved transaction says which provider.
+async function finishRedirect(params) {
   const tx = JSON.parse(sessionStorage.getItem("oauth") ?? "null");
   sessionStorage.removeItem("oauth");
   history.replaceState(null, "", "/");
   if (!tx || tx.state !== params.get("state")) throw new Error("Sign-in did not start here. Please try again.");
-  const res = await fetch("/api/auth/hf/token", {
+  const res = await fetch(`/api/auth/${tx.p}/token`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: params.get("code") }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body.access_token) throw new Error(`Hugging Face refused the sign-in: ${body.error_description || body.error || res.status}`);
-  localStorage.setItem("freeagent:hf", body.access_token);
+  if (!res.ok || !body.access_token) throw new Error(`${LABEL[tx.p]} refused the sign-in: ${body.error_description || body.error || res.status}`);
+  localStorage.setItem(`freeagent:${tx.p}`, body.access_token);
   return tx;
 }
 
-const signIn = (p, intent) => (p === "github" ? signInGitHub(intent) : Promise.resolve(signInHF(intent)));
+const signIn = (p, intent) => {
+  if (p === "hf") return Promise.resolve(signInHF(intent));
+  return config.github?.redirect ? Promise.resolve(signInGitHubRedirect(intent)) : signInGitHub(intent);
+};
 
 function signOut(p) {
   localStorage.removeItem(`freeagent:${p}`);
@@ -240,6 +255,10 @@ async function home() {
     $(`${p}-signin`).hidden = Boolean(user[p]);
     $(`${p}-signout`).hidden = !user[p];
   }
+  // If GitHub ever says "redirect_uri is not associated", these two values are what to compare
+  // with the OAuth App's page: its Client ID and its Authorization callback URL.
+  $("github-details").hidden = !available.github || Boolean(user.github);
+  if (available.github) $("github-details-text").textContent = `client id ${available.github.slice(0, 8)}… · callback ${config.github.redirect_uri}`;
   $("boxes").textContent = "";
   $("boxes-note").textContent = user.github || user.hf ? "Loading…" : "Sign in to see your boxes.";
   if (!user.github && !user.hf) return;
@@ -264,6 +283,7 @@ async function main() {
     $(`${p}-signout`).onclick = () => { signOut(p); home(); };
     $(`new-${p}`).onclick = () => (user[p] ? nameStep(p) : signIn(p, "create").catch((e) => fail(e.message)));
   }
+  $("github-device").onclick = () => signInGitHub("home").catch((e) => fail(e.message));
   $("device-back").onclick = home;
   $("device-copy").onclick = () => navigator.clipboard?.writeText($("device-code").textContent).then(() => { $("device-copy").textContent = "Copied"; });
   $("name-back").onclick = home;
@@ -277,8 +297,8 @@ async function main() {
   if (params.get("error")) { history.replaceState(null, "", "/"); return fail(`Sign-in failed: ${params.get("error_description") ?? params.get("error")}`); }
   if (params.get("code")) {
     show("busy"); $("busy-title").textContent = "Signing you in…";
-    const tx = await finishHF(params);
-    if (tx.intent === "create") { await whoami("hf"); if (user.hf) return nameStep("hf"); }
+    const tx = await finishRedirect(params);
+    if (tx.intent === "create") { await whoami(tx.p); if (user[tx.p]) return nameStep(tx.p); }
   }
   await home();
 }
