@@ -1,17 +1,20 @@
 # freeagent landing page
 
-The page at https://freeagent.cosmiclabs.org. Sign in with GitHub or Hugging Face, and it creates a
-box in **your** account — a GitHub Codespace, or a Hugging Face Space duplicated from the freeagent
-template — then opens it. It also lists, opens and deletes the boxes you already have.
+The page at https://freeagent.cosmiclabs.org. Your boxes first: each card is a GitHub Codespace or a
+Hugging Face Space in **your** account running Herdr, Collie and your agents; tap to open (a stopped
+codespace is woken first), or delete from the card's menu. "New box" picks the account, optionally a
+GitHub repository to start from, and a name; the box appears as Provisioning and the page polls
+until it runs. The flow and copy follow the crux-android deployments screen.
 
 No database, no accounts of ours. Tokens stay in the visitor's browser. The one piece of server code
 is a Cloudflare Pages Function that relays the OAuth token requests, because those endpoints send no
 CORS headers and Hugging Face's needs the app's client secret.
 
 ```
-public/index.html                          the page
-public/app.js                              sign-in, list/open/delete, create
-public/config.js                           template repo and Space, machine size
+public/index.html                          the page: boxes list, create / accounts / delete dialogs
+public/app.js                              sign-in, boxes, connect, create, accounts
+public/app.css                             Material 3 palette from crux-android's Theme.kt
+public/config.js                           template repo and Space, idle timeout, default name
 public/_headers                            security headers, no-cache on the app files
 functions/api/auth/[provider]/[action].js  config · token (code exchange, github + hf) · device, poll (github fallback)
 wrangler.toml
@@ -28,7 +31,8 @@ optional: the page only offers the ones whose secrets are set.
    Authorization callback URL: your site's root URL with a trailing slash, e.g.
    `https://freeagent.example.com/`. Note the client id and generate a client secret. Optionally
    tick **Enable Device Flow**: the page then also offers "sign in with a code", which needs no
-   callback and no secret.
+   callback and no secret. The page asks for the `codespace` and `repo` scopes in one consent:
+   `repo` is what lists private repositories and lets a box clone them.
 
 3. **Hugging Face OAuth app** — huggingface.co → Settings → Developer applications → New.
    Redirect URI: your site's root URL with a trailing slash, e.g. `https://freeagent.example.com/`.

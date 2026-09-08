@@ -37,7 +37,7 @@ export async function onRequest({ request, env, params }) {
       });
     }
     if (action === "device" && request.method === "POST") {
-      return forward(`${GH}/login/device/code`, { client_id: env.GITHUB_CLIENT_ID, scope: "codespace" });
+      return forward(`${GH}/login/device/code`, { client_id: env.GITHUB_CLIENT_ID, scope: "codespace repo" });
     }
     if (action === "poll" && request.method === "POST" && typeof body.device_code === "string") {
       return forward(`${GH}/login/oauth/access_token`, {

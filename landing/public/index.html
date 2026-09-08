@@ -6,109 +6,132 @@
 <title>freeagent</title>
 <meta name="description" content="Run Claude Code, Codex and OpenCode on a box you own and drive them from your phone.">
 <meta name="color-scheme" content="dark light">
-<style>
-  :root{--bg:#0f1115;--fg:#e8e8ec;--muted:#a3a8b3;--card:#171a21;--line:#262a33;--accent:#ffd21e;--accent-fg:#1a1a1a;--danger:#ff6b6b;--ok:#7bd88f}
-  @media (prefers-color-scheme: light){:root{--bg:#f7f7f8;--fg:#15171b;--muted:#5d6370;--card:#fff;--line:#e3e5ea;--ok:#1d8f3a}}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,sans-serif;display:grid;place-items:start center;padding:1.5rem;min-height:100vh}
-  .card{width:100%;max-width:28rem;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.5rem}
-  h1{font-size:1.5rem;line-height:1.2;margin:0 0 .5rem}
-  h2{font-size:.95rem;margin:1.4rem 0 .5rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-  p{margin:.5rem 0;color:var(--muted)}
-  button,.btn{display:block;width:100%;padding:.9rem 1rem;border:0;border-radius:12px;font:inherit;font-weight:600;cursor:pointer;text-align:center;text-decoration:none;margin-top:.6rem}
-  .primary{background:var(--accent);color:var(--accent-fg)}
-  .ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
-  .small{display:inline-block;width:auto;padding:.45rem .8rem;font-size:.9rem;margin:0 0 0 .4rem;border-radius:9px}
-  .danger{color:var(--danger);border-color:var(--danger)}
-  input{width:100%;padding:.8rem;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit}
-  .err{color:var(--danger);min-height:1.2em;font-size:.9rem}
-  code{background:var(--bg);border:1px solid var(--line);padding:.1em .35em;border-radius:6px;word-break:break-all}
-  .row{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.7rem 0;border-top:1px solid var(--line)}
-  .row:first-of-type{border-top:0}
-  .who{color:var(--muted);font-size:.9rem}
-  .who.on{color:var(--ok)}
-  .box{border:1px solid var(--line);border-radius:12px;padding:.8rem;margin-top:.6rem}
-  .box .actions{display:flex;gap:.4rem;margin-top:.5rem}
-  .box .actions button{margin:0;flex:1}
-  .spinner{width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:.5rem 0 1rem}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  [hidden]{display:none!important}
-</style>
+<link rel="stylesheet" href="app.css?v=dev">
 </head>
 <body>
-<div class="card">
+<header class="topbar">
+  <div class="brand">freeagent</div>
+  <div class="topbar-actions">
+    <button class="icon" id="new-box" title="New box" aria-label="New box" hidden>+</button>
+    <button class="icon" id="accounts-open" title="Accounts" aria-label="Accounts">⚙</button>
+  </div>
+</header>
 
-  <section data-step="home" hidden>
-    <h1>Your coding agents, on a box you own, from your phone.</h1>
-    <p>Claude Code, Codex and OpenCode on a machine in your own GitHub or Hugging Face account, with a phone UI that shows which agent needs you.</p>
-
-    <h2>Accounts</h2>
-    <div class="row" id="github-row" hidden>
-      <div><strong>GitHub</strong><div class="who" id="github-who"></div></div>
-      <div><button class="small ghost" id="github-signin">Sign in</button><button class="small ghost" id="github-signout" hidden>Sign out</button></div>
+<main>
+  <section id="signed-out" hidden>
+    <div class="empty">
+      <div class="mark">GitHub</div>
+      <h1>Sign in</h1>
+      <p>Your coding agents, on a box you own, from your phone. Claude Code, Codex and OpenCode on a machine in your own account.</p>
+      <button class="filled" id="signin-github">Sign in with GitHub</button>
+      <button class="text" id="signin-hf-alt" hidden>Use Hugging Face instead</button>
+      <p class="error" id="signed-out-error"></p>
     </div>
-    <details id="github-details" hidden><summary class="who" style="cursor:pointer">GitHub sign-in details</summary>
-      <p class="who" id="github-details-text"></p>
-      <p class="who">If GitHub refuses the redirect, check the OAuth App has exactly this callback URL. Or <a href="#" id="github-device">sign in with a code instead</a>.</p>
+  </section>
+
+  <section id="boxes-view" hidden>
+    <p class="error" id="list-error"></p>
+    <div id="skeleton" hidden><div class="card skeleton"></div><div class="card skeleton"></div><div class="card skeleton"></div></div>
+    <div id="cards"></div>
+    <div class="empty" id="empty" hidden>
+      <h1>No boxes yet</h1>
+      <p>A box is a machine in your own GitHub or Hugging Face account running Herdr, Collie and your coding agents.</p>
+      <button class="filled" id="new-box-empty">New box</button>
+    </div>
+  </section>
+</main>
+
+<!-- Create -->
+<dialog id="create">
+  <form method="dialog" id="create-form">
+    <h2>Create a box</h2>
+
+    <label class="field">
+      <span>Create in</span>
+      <select id="create-provider"></select>
+    </label>
+
+    <div class="field" id="repo-field">
+      <span>Start from a repository</span>
+      <button type="button" class="picker" id="repo-picker"><span id="repo-picker-value">Empty box</span><span class="chev">🔍</span></button>
+      <p class="hint" id="repo-hint" hidden></p>
+    </div>
+
+    <details id="advanced">
+      <summary>Advanced</summary>
+      <label class="field">
+        <span>Name</span>
+        <input id="create-name" autocomplete="off" spellcheck="false" maxlength="63" pattern="^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$">
+        <p class="hint" id="name-hint">Letters, numbers and hyphens</p>
+      </label>
+      <label class="field" id="machine-field">
+        <span>Machine</span>
+        <select id="create-machine">
+          <option value="basicLinux32gb">2 cores · 8 GB (free plan: 120 core-hours/month)</option>
+          <option value="standardLinux32gb">4 cores · 16 GB</option>
+        </select>
+      </label>
+      <label class="field" id="visibility-field" hidden>
+        <span>Space visibility</span>
+        <select id="create-visibility">
+          <option value="public">Public (Collie's token is the door)</option>
+          <option value="private">Private</option>
+        </select>
+      </label>
     </details>
-    <div class="row" id="hf-row" hidden>
-      <div><strong>Hugging Face</strong><div class="who" id="hf-who"></div></div>
-      <div><button class="small ghost" id="hf-signin">Sign in</button><button class="small ghost" id="hf-signout" hidden>Sign out</button></div>
+
+    <p class="error" id="create-error"></p>
+    <div class="actions">
+      <button type="button" class="text" id="create-cancel">Cancel</button>
+      <button type="submit" class="filled" id="create-submit">Create</button>
     </div>
+  </form>
 
-    <h2>Your boxes</h2>
-    <div id="boxes"></div>
-    <p id="boxes-note"></p>
+  <!-- Repository search replaces the form in place, like the app -->
+  <div id="repo-search" hidden>
+    <h2>Start from a repository</h2>
+    <input id="repo-query" placeholder="Type to filter" autocomplete="off" spellcheck="false">
+    <div class="list" id="repo-list"></div>
+    <div class="actions"><button type="button" class="text" id="repo-cancel">Cancel</button></div>
+  </div>
+</dialog>
 
-    <h2>New box</h2>
-    <button id="new-github" class="primary" hidden>New codespace</button>
-    <button id="new-hf" class="ghost" hidden>New Hugging Face Space</button>
-  </section>
+<!-- Accounts -->
+<dialog id="accounts">
+  <h2>Accounts</h2>
+  <div class="row" id="acct-github" hidden>
+    <div><strong>GitHub</strong><div class="sub" id="acct-github-sub"></div></div>
+    <div class="slot"><button class="outlined small" id="acct-github-connect" hidden>Connect</button></div>
+  </div>
+  <div class="row" id="acct-hf" hidden>
+    <div><strong>Hugging Face</strong><div class="sub" id="acct-hf-sub"></div></div>
+    <div class="slot"><button class="outlined small" id="acct-hf-connect" hidden>Connect</button><button class="text small" id="acct-hf-disconnect" hidden>Disconnect</button></div>
+  </div>
+  <details class="sub" id="github-details" hidden><summary>GitHub sign-in details</summary>
+    <p id="github-details-text"></p>
+    <p>If GitHub refuses the redirect, check the OAuth App's callback URL is exactly the one above, or <a href="#" id="github-device">sign in with a code instead</a>.</p>
+  </details>
+  <hr>
+  <div class="actions"><button class="text" id="signout" hidden>Sign out</button><button class="text" id="accounts-close">Close</button></div>
+</dialog>
 
-  <section data-step="device" hidden>
-    <h1>Sign in to GitHub</h1>
-    <p>Enter this code on GitHub, then come back here. This page will notice on its own.</p>
-    <p style="text-align:center;font-size:2rem;letter-spacing:.15em;margin:1rem 0"><code id="device-code"></code></p>
-    <a id="device-link" class="btn primary" href="https://github.com/login/device" target="_blank" rel="noopener">Open github.com/login/device</a>
-    <button class="ghost" id="device-copy">Copy code</button>
-    <button class="ghost" id="device-back">Cancel</button>
-  </section>
+<!-- Delete -->
+<dialog id="confirm">
+  <h2>Delete this box?</h2>
+  <p id="confirm-text"></p>
+  <div class="actions"><button class="text" id="confirm-cancel">Cancel</button><button class="filled danger" id="confirm-ok">Delete</button></div>
+</dialog>
 
-  <section data-step="busy" hidden>
-    <div class="spinner"></div>
-    <h1 id="busy-title"></h1>
-    <p id="busy-text"></p>
-  </section>
+<!-- Device-code fallback -->
+<dialog id="device">
+  <h2>Sign in to GitHub</h2>
+  <p>Enter this code on GitHub, then come back here.</p>
+  <p class="code"><code id="device-code"></code></p>
+  <a id="device-link" class="filled btn" href="https://github.com/login/device" target="_blank" rel="noopener">Open github.com/login/device</a>
+  <div class="actions"><button class="text" id="device-cancel">Cancel</button></div>
+</dialog>
 
-  <section data-step="name" hidden>
-    <h1>Name your box</h1>
-    <form id="name-form">
-      <input id="name-input" autocomplete="off" spellcheck="false" maxlength="48">
-      <p class="err" id="name-error"></p>
-      <p id="name-hint"></p>
-      <button type="submit" class="primary">Create</button>
-      <button type="button" class="ghost" id="name-back">Back</button>
-    </form>
-  </section>
-
-  <section data-step="done" hidden>
-    <h1>Your box is running.</h1>
-    <p id="done-note"></p>
-    <a id="open-link" class="btn primary" href="#">Open my box</a>
-    <div id="token-block" hidden>
-      <p>Root token, shown once. Your phone trades it for its own device token when it opens the box. Keep a copy to add another device later.</p>
-      <p><code id="token-text"></code></p>
-    </div>
-    <button id="done-home" class="ghost">Back to my boxes</button>
-  </section>
-
-  <section data-step="error" hidden>
-    <h1>Something went wrong</h1>
-    <p class="err" id="error-text"></p>
-    <button id="error-home" class="ghost">Back</button>
-  </section>
-
-</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
 <script src="config.js?v=dev"></script>
 <script src="app.js?v=dev"></script>
 </body>
