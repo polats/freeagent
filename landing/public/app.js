@@ -148,15 +148,20 @@ async function storeWrite(data) {
   }
 }
 
-/** A device with no local copy of a connected account takes the stored one. Local wins otherwise. */
+/** A device with no local copy of a connected account takes the stored one. Local wins otherwise —
+ * and a local connection the store does not know yet (connected before the store existed, or on a
+ * device that was offline) is pushed up, so every device ends the sign-in with the same set. */
 async function restoreConnected() {
   if (!user.github) return;
-  const stored = await storeRead().catch(() => null);
-  if (!stored) return;
+  let stored;
+  try { stored = (await storeRead()) ?? {}; } catch { return; }
+  let behind = false;
   for (const p of LINKED) {
     const t = stored[p];
     if (t?.token && t.scope === SCOPE_TAG[p] && !tokenOf(p)) storeToken(p, t.token);
+    else if (tokenOf(p) && t?.token !== tokenOf(p)) behind = true;
   }
+  if (behind) await saveConnected().catch(() => {});
 }
 
 /** Write what is connected right now. Called after a connect, a disconnect, or an expiry. */
