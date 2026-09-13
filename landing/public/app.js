@@ -381,8 +381,10 @@ function confirmDelete(b) {
     addTombstone(b.id); dropGhost(b.id);
     boxes = boxes.filter((x) => x.id !== b.id); renderCards(); renderAccounts();
     try {
-      if (b.p === "github") await api("github", `/user/codespaces/${b.id}`, { method: "DELETE" });
-      else await api("hf", "/api/repos/delete", { method: "DELETE", body: JSON.stringify({ type: "space", name: b.name }) });
+      // keepalive: the request outlives a tab closed a moment after the tap, so a hidden tile never
+      // stands for a delete that was never sent.
+      if (b.p === "github") await api("github", `/user/codespaces/${b.id}`, { method: "DELETE", keepalive: true });
+      else await api("hf", "/api/repos/delete", { method: "DELETE", keepalive: true, body: JSON.stringify({ type: "space", name: b.name }) });
       LS.del(`freeagent:box:${b.id}`);
       toast(`Deleted ${b.name}`);
     } catch (e) {
