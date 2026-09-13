@@ -10,6 +10,7 @@ const vertex = /* glsl */ `
   precision highp float;
   attribute vec3 position; attribute vec3 next; attribute vec3 prev; attribute vec2 uv; attribute float side;
   uniform vec2 uResolution; uniform float uDPR; uniform float uThickness;
+  varying vec2 vUv;
   vec4 getPosition() {
     vec4 current = vec4(position, 1);
     vec2 aspect = vec2(uResolution.x / uResolution.y, 1);
@@ -25,12 +26,21 @@ const vertex = /* glsl */ `
     current.xy -= normal * side;
     return current;
   }
-  void main() { gl_Position = getPosition(); }
+  void main() { vUv = uv; gl_Position = getPosition(); }
 `;
+// Soft like the stars: the stroke fades toward both edges (uv.x runs across the line) and at both
+// ends (uv.y runs along it), so it reads as a blurred ribbon rather than a hard-edged polygon.
 const fragment = /* glsl */ `
   precision highp float;
   uniform vec3 uColor; uniform float uAlpha;
-  void main() { gl_FragColor = vec4(uColor, uAlpha); }
+  varying vec2 vUv;
+  void main() {
+    float d = abs(vUv.x - 0.5) * 2.0;
+    float soft = 1.0 - smoothstep(0.15, 1.0, d);
+    soft *= soft;
+    float ends = smoothstep(0.0, 0.12, vUv.y) * smoothstep(1.0, 0.85, vUv.y);
+    gl_FragColor = vec4(uColor, uAlpha * soft * ends);
+  }
 `;
 
 const random = (a, b) => { const t = Math.random(); return a * (1 - t) + b * t; };
@@ -46,18 +56,20 @@ function build(el) {
   gl = renderer.gl; gl.clearColor(0, 0, 0, 0);
   scene = new Transform();
   lines = [];
-  // The example's five-colour brush, in greens: deep forest under, the brand's two greens in the
-  // middle, mint on top. Thickness is random per line like the original (scaled for a phone), so the
-  // bundle is a different brush on every load.
-  ["#0f5c2e", "#2eaa4a", "#40ff00", "#baff00", "#a8ffc2"].forEach((color) => {
-    // Phone tuning: the example's offsets (0.02) and tail easing (0.9) suit a mouse crossing a big
-    // screen; a thumb moves a few centimetres, so the lines fan wider, keep longer tails and stay
-    // fatter, or the bundle collapses into one thin trail.
-    const thickness = random(22, 52);
-    const line = { spring: random(0.03, 0.1), friction: random(0.72, 0.92), tail: random(0.55, 0.75), mouseVelocity: new Vec3(), mouseOffset: new Vec3(random(-1, 1) * 0.07, random(-1, 1) * 0.07, 0), points: [] };
+  // Five strokes, the brand's cosmic green (#40ff00) carrying the brush: three of five are it or a
+  // shade of it, and the fattest is pure. Lime and mint ride on top, thinner. Each stroke is
+  // translucent so overlaps deepen instead of covering. Thickness is jittered per load.
+  // Phone tuning: the example's offsets (0.02) and tail easing (0.9) suit a mouse crossing a big
+  // screen; a thumb moves a few centimetres, so the lines fan wider, keep longer tails and stay
+  // fatter, or the bundle collapses into one thin trail.
+  [["#2ed600", 30, 0.55], ["#40ff00", 58, 0.6], ["#40ff00", 42, 0.5], ["#baff00", 24, 0.55], ["#a8ffc2", 16, 0.5]].forEach(([color, base, opacity]) => {
+    const thickness = base * random(0.85, 1.2);
+    const line = { opacity, spring: random(0.03, 0.1), friction: random(0.72, 0.92), tail: random(0.55, 0.75), mouseVelocity: new Vec3(), mouseOffset: new Vec3(random(-1, 1) * 0.07, random(-1, 1) * 0.07, 0), points: [] };
     for (let i = 0; i < 28; i += 1) line.points.push(new Vec3());
     line.polyline = new Polyline(gl, { points: line.points, vertex, fragment, uniforms: { uColor: { value: new Color(color) }, uThickness: { value: thickness }, uAlpha: { value: 0 } } });
-    line.polyline.mesh.program.transparent = true; line.polyline.mesh.program.depthTest = false;
+    // setBlendFunc is what actually turns blending on in OGL (the transparent flag alone, set after
+    // construction, does not); straight alpha over the sky so the soft edges read as blur.
+    line.polyline.mesh.program.setBlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); line.polyline.mesh.program.depthTest = false;
     line.polyline.mesh.setParent(scene);
     lines.push(line);
   });
@@ -100,7 +112,7 @@ function frame() {
         }
       }
       line.polyline.updateGeometry();
-      line.polyline.mesh.program.uniforms.uAlpha.value = alpha;
+      line.polyline.mesh.program.uniforms.uAlpha.value = alpha * line.opacity;
     }
     renderer.render({ scene });
   } else if (alpha !== 0) { alpha = 0; gl.clear(gl.COLOR_BUFFER_BIT); }
