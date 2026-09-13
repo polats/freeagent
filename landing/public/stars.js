@@ -1,174 +1,383 @@
-// Cosmic Labs star field for the sign-in screen. Eight-point stars (the ✦ from the COSMIC✦LABS
-// lockup) in the brand's neon green on black, in three depths. They drift and twinkle on their own;
-// a finger or pointer becomes a gravity well they fall toward and orbit, and letting go releases
-// them; a tap sends a ripple out. No library, one canvas, sprites pre-rendered per size so the glow
-// costs nothing per frame. Reduced motion: one still frame, still drawn in the brand.
-(() => {
-  const GREEN = "#40ff00";
-  const DPR = Math.min(window.devicePixelRatio || 1, 2);
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// The star effect from cosmiclabs.org (index.html, inline script), reused as is: the silver stars
+// image (images/allstars.png) is dithered with a 4×4 Bayer matrix into 2px particles — lime for the
+// bright pixels, the ground gray for the dark ones — that float idly and scatter from the pointer,
+// then drift home. Lines marked FREEAGENT are the only additions (touch input, stop, manual start).
+// Main script
+class Particle {
+    constructor(x, y, isWhite, bayerX, bayerY) {
+        this.pos = { x, y };
+        this.origin = { x, y };
+        this.vel = { x: 0, y: 0 };
+        this.dispersed = false;
+        this.isStatic = false;
+        this.isWhite = isWhite;
+        this.baseSize = 2;
+        this.maxSize = 3;
+        this.currentSize = this.baseSize;
+        this.bayerX = bayerX;
+        this.bayerY = bayerY;
+        this.returnSpeed = 0.05;
+        this.lastMouseX = null;
+        this.lastMouseY = null;
+        this.lastMouseVelX = 0;
+        this.lastMouseVelY = 0;
 
-  let canvas, ctx, stars = [], w = 0, h = 0, raf = 0, running = false, last = 0;
-  const pointer = { x: 0, y: 0, down: false, active: false };
-  const pulses = []; // taps: { x, y, r, life }
-
-  // ---- sprites: one glowing star per (size, depth) bucket, drawn once --------------------------
-  const sprites = new Map();
-  function sprite(size, depth) {
-    const key = `${size}|${depth}`;
-    if (sprites.has(key)) return sprites.get(key);
-    const glow = size * (1.6 + depth * 0.8);
-    const pad = Math.ceil(size + glow);
-    const c = document.createElement("canvas");
-    c.width = c.height = pad * 2 * DPR;
-    const g = c.getContext("2d");
-    g.scale(DPR, DPR);
-    g.translate(pad, pad);
-    g.shadowColor = GREEN;
-    g.shadowBlur = glow;
-    g.fillStyle = GREEN;
-    g.globalAlpha = 0.35 + depth * 0.65;
-    starPath(g, size, size * 0.42);
-    g.fill();
-    // a hot core so the near stars read as sharp points, not blobs
-    if (depth > 0.6) { g.shadowBlur = 0; g.fillStyle = "#eaffe0"; g.globalAlpha = 0.9; starPath(g, size * 0.55, size * 0.2); g.fill(); }
-    sprites.set(key, { c, pad });
-    return sprites.get(key);
-  }
-  // Four long spikes on the axes, four short ones on the diagonals — the lockup's ✦.
-  function starPath(g, R, r) {
-    g.beginPath();
-    for (let i = 0; i < 16; i += 1) {
-      const a = (i * Math.PI) / 8;
-      const isLong = i % 4 === 0, isShort = i % 4 === 2;
-      const rad = isLong ? R : isShort ? R * 0.62 : r * 0.55;
-      g.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+        // Idle floating animation
+        this.idleTime = Math.random() * Math.PI * 2; // random phase offset
+        this.idleSpeed = 0.8 + Math.random() * 0.6; // faster oscillation
+        this.idleAmplitude = 4 + Math.random() * 4; // 4-8px float range
     }
-    g.closePath();
-  }
 
-  // ---- field ---------------------------------------------------------------------------------------
-  function seed() {
-    stars = [];
-    const count = Math.round((w * h) / 9000); // ~75 on a phone, ~200 on a laptop
-    for (let i = 0; i < count; i += 1) {
-      const depth = Math.random() ** 1.6; // most stars far and small
-      stars.push({
-        x: Math.random() * w, y: Math.random() * h,
-        hx: 0, hy: 0, // home drift, set below
-        vx: 0, vy: 0,
-        depth,
-        size: Math.round(2 + depth * 12),
-        rot: Math.random() * Math.PI * 2, spin: (Math.random() - 0.5) * 0.4 * (0.3 + depth),
-        phase: Math.random() * Math.PI * 2, twinkle: 0.6 + Math.random() * 1.8,
-      });
-    }
-    for (const s of stars) { const a = Math.random() * Math.PI * 2; const sp = 3 + s.depth * 12; s.hx = Math.cos(a) * sp; s.hy = Math.sin(a) * sp; }
-  }
-
-  function resize() {
-    const rect = canvas.getBoundingClientRect();
-    w = Math.max(1, Math.round(rect.width)); h = Math.max(1, Math.round(rect.height));
-    canvas.width = w * DPR; canvas.height = h * DPR;
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    sprites.clear();
-    seed();
-    if (reduced) draw(0);
-  }
-
-  function step(dt) {
-    const t = performance.now() / 1000;
-    for (const s of stars) {
-      // drift home velocity, eased back toward it when nothing is pulling
-      let ax = (s.hx - s.vx) * 0.8, ay = (s.hy - s.vy) * 0.8;
-      if (pointer.active) {
-        const dx = pointer.x - s.x, dy = pointer.y - s.y;
-        const d2 = dx * dx + dy * dy + 400;
-        const reach = pointer.down ? 260 : 170;
-        if (d2 < reach * reach) {
-          const d = Math.sqrt(d2);
-          const pull = (pointer.down ? 5200 : 2600) * (0.4 + s.depth) / d2; // near stars feel it most
-          ax += (dx / d) * pull * 60; ay += (dy / d) * pull * 60;
-          // a touch of tangential velocity so they swirl rather than pile up
-          ax += (-dy / d) * pull * 18; ay += (dx / d) * pull * 18;
+    update(mx, my, dispersionRadius, time) {
+        // Idle floating animation when not dispersed
+        this.idleTime += 0.016 * this.idleSpeed;
+        
+        if (this.lastMouseX !== null) {
+            this.lastMouseVelX = mx - this.lastMouseX;
+            this.lastMouseVelY = my - this.lastMouseY;
         }
-      }
-      for (const p of pulses) {
-        const dx = s.x - p.x, dy = s.y - p.y, d = Math.hypot(dx, dy) + 1;
-        const band = Math.abs(d - p.r);
-        if (band < 40) { const k = (1 - band / 40) * 900 * (0.3 + s.depth); ax += (dx / d) * k; ay += (dy / d) * k; }
-      }
-      s.vx += ax * dt; s.vy += ay * dt;
-      const cap = 90 + s.depth * 260; const v = Math.hypot(s.vx, s.vy);
-      if (v > cap) { s.vx *= cap / v; s.vy *= cap / v; }
-      s.x += s.vx * dt; s.y += s.vy * dt;
-      s.rot += s.spin * dt;
-      // wrap
-      const m = 30;
-      if (s.x < -m) s.x += w + 2 * m; else if (s.x > w + m) s.x -= w + 2 * m;
-      if (s.y < -m) s.y += h + 2 * m; else if (s.y > h + m) s.y -= h + 2 * m;
-      s.alpha = 0.55 + 0.45 * Math.sin(t * s.twinkle + s.phase);
+
+        const mouseHasMoved =
+            this.lastMouseX !== mx || this.lastMouseY !== my;
+        this.lastMouseX = mx;
+        this.lastMouseY = my;
+
+        const dx = mx - this.pos.x;
+        const dy = my - this.pos.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < dispersionRadius) {
+            if (!this.dispersed || mouseHasMoved) {
+                const impact = 1 - distance / dispersionRadius;
+                const angle = Math.atan2(dy, dx);
+                let velocityX =
+                    -Math.cos(angle) * (3 + Math.random() * 2);
+                let velocityY =
+                    -Math.sin(angle) * (3 + Math.random() * 2);
+                velocityX += this.lastMouseVelX * 0.5;
+                velocityY += this.lastMouseVelY * 0.5;
+                velocityX += (Math.random() - 0.5) * 2;
+                velocityY += (Math.random() - 0.5) * 2;
+                this.vel.x = velocityX * impact;
+                this.vel.y = velocityY * impact;
+                this.dispersed = true;
+                this.isStatic = false;
+                this.currentSize =
+                    this.baseSize +
+                    Math.random() * (this.maxSize - this.baseSize);
+            }
+        }
+
+        if (this.dispersed) {
+            if (!mouseHasMoved && distance > dispersionRadius) {
+                if (!this.isStatic) {
+                    this.isStatic = true;
+                    this.vel.x += (Math.random() - 0.5) * 0.3;
+                    this.vel.y += (Math.random() - 0.5) * 0.3;
+                }
+            } else {
+                this.isStatic = false;
+            }
+
+            if (!this.isStatic) {
+                this.pos.x += this.vel.x;
+                this.pos.y += this.vel.y;
+                this.vel.x += (Math.random() - 0.5) * 0.2;
+                this.vel.y += (Math.random() - 0.5) * 0.2;
+
+                if (distance > dispersionRadius * 1.5) {
+                    const returnX = this.origin.x - this.pos.x;
+                    const returnY = this.origin.y - this.pos.y;
+                    const returnDist = Math.sqrt(
+                        returnX * returnX + returnY * returnY,
+                    );
+
+                    if (returnDist > 2) {
+                        this.vel.x += returnX * this.returnSpeed;
+                        this.vel.y += returnY * this.returnSpeed;
+                    } else {
+                        this.reset();
+                    }
+                }
+
+                this.vel.x *= 0.95;
+                this.vel.y *= 0.95;
+
+                const rect = this.canvas.getBoundingClientRect();
+                if (this.pos.x < 0 || this.pos.x > rect.width) {
+                    this.vel.x *= -0.8;
+                    this.pos.x = Math.max(
+                        0,
+                        Math.min(this.pos.x, rect.width),
+                    );
+                }
+                if (this.pos.y < 0 || this.pos.y > rect.height) {
+                    this.vel.y *= -0.8;
+                    this.pos.y = Math.max(
+                        0,
+                        Math.min(this.pos.y, rect.height),
+                    );
+                }
+            }
+        }
     }
-    for (let i = pulses.length - 1; i >= 0; i -= 1) { const p = pulses[i]; p.r += 520 * dt; p.life -= dt; if (p.life <= 0) pulses.splice(i, 1); }
-  }
 
-  function draw(t) {
-    ctx.clearRect(0, 0, w, h);
-    for (const s of stars) {
-      const sp = sprite(s.size, +s.depth.toFixed(1));
-      ctx.globalAlpha = s.alpha ?? 0.8;
-      ctx.translate(s.x, s.y); ctx.rotate(s.rot);
-      ctx.drawImage(sp.c, -sp.pad, -sp.pad, sp.pad * 2, sp.pad * 2);
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    reset() {
+        this.pos.x = this.origin.x;
+        this.pos.y = this.origin.y;
+        this.vel.x = 0;
+        this.vel.y = 0;
+        this.dispersed = false;
+        this.isStatic = false;
+        this.currentSize = this.baseSize;
     }
-    ctx.globalAlpha = 1;
-    for (const p of pulses) {
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.strokeStyle = GREEN; ctx.globalAlpha = Math.max(0, p.life) * 0.35; ctx.lineWidth = 1; ctx.stroke();
+
+    draw(ctx) {
+        ctx.fillStyle = this.isWhite ? "#baff00" : "#d9d6d6";
+        const offset = (this.currentSize - this.baseSize) / 2;
+        
+        // Apply idle floating offset when not dispersed
+        let drawX = this.pos.x;
+        let drawY = this.pos.y;
+        if (!this.dispersed) {
+            drawY += Math.sin(this.idleTime) * this.idleAmplitude;
+            drawX += Math.sin(this.idleTime * 0.7 + this.bayerX) * this.idleAmplitude * 0.5;
+        }
+        
+        ctx.fillRect(
+            drawX - offset,
+            drawY - offset,
+            this.currentSize,
+            this.currentSize,
+        );
     }
-    ctx.globalAlpha = 1;
-  }
+}
 
-  function frame(now) {
-    if (!running) return;
-    const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
-    step(dt); draw(now);
-    raf = requestAnimationFrame(frame);
-  }
+class DitheredPixelEffect {
+    constructor(containerSelector) {
+        // Create container if it doesn't exist
+        let container = document.querySelector(containerSelector);
+        if (!container) {
+            container = document.createElement("div");
+            container.className = "dithered-container";
+            document.body.appendChild(container);
+        }
 
-  // ---- input -------------------------------------------------------------------------------------
-  function at(ev) { const r = canvas.getBoundingClientRect(); const p = ev.touches ? ev.touches[0] : ev; return p ? { x: p.clientX - r.left, y: p.clientY - r.top } : null; }
-  function onMove(ev) { const p = at(ev); if (!p) return; pointer.x = p.x; pointer.y = p.y; pointer.active = true; }
-  function onDown(ev) { const p = at(ev); if (!p) return; pointer.x = p.x; pointer.y = p.y; pointer.active = true; pointer.down = true; }
-  function onUp(ev) { pointer.down = false; if (ev.type.startsWith("touch")) pointer.active = false; }
-  function onTap(ev) { const p = at(ev); if (p) pulses.push({ x: p.x, y: p.y, r: 0, life: 1 }); }
-  function onLeave() { pointer.active = false; pointer.down = false; }
+        this.container = container;
 
-  const listeners = [
-    ["pointermove", onMove], ["pointerdown", onDown], ["pointerup", onUp], ["pointercancel", onUp], ["pointerleave", onLeave], ["click", onTap],
-  ];
+        // Canvas setup
+        this.canvas = document.createElement("canvas");
+        this.canvas.style.position = "absolute";
+        this.canvas.style.top = "0";
+        this.canvas.style.left = "0";
+        this.canvas.style.width = "100%";
+        this.canvas.style.height = "100%";
+        this.canvas.style.pointerEvents = "none";
+        this.ctx = this.canvas.getContext("2d");
 
-  window.Stars = {
-    start(el) {
-      if (running && canvas === el) return;
-      this.stop();
-      canvas = el; ctx = canvas.getContext("2d");
-      resize();
-      for (const [type, fn] of listeners) canvas.addEventListener(type, fn, { passive: true });
-      window.addEventListener("resize", resize);
-      if (reduced) return;
-      running = true; last = performance.now(); raf = requestAnimationFrame(frame);
+        // Temporary canvas for image processing
+        this.tempCanvas = document.createElement("canvas");
+        this.tempCtx = this.tempCanvas.getContext("2d");
+
+        // Particle system setup
+        this.particles = [];
+        this.dispersionRadius = 50;
+        this.mousePos = { x: -1000, y: -1000 };
+
+        // Add canvas to container
+        this.container.appendChild(this.canvas);
+
+        // Event listeners
+        this.container.addEventListener(
+            "mousemove",
+            this.onMouseMove.bind(this),
+        );
+        // FREEAGENT: a finger disperses the stars like the mouse does on the site
+        this.container.addEventListener("touchstart", this.onTouch.bind(this), { passive: true });
+        this.container.addEventListener("touchmove", this.onTouch.bind(this), { passive: true });
+        this.container.addEventListener("touchend", this.onMouseLeave.bind(this), { passive: true });
+        this.container.addEventListener(
+            "mouseleave",
+            this.onMouseLeave.bind(this),
+        );
+        window.addEventListener(
+            "resize",
+            this.onWindowResize.bind(this),
+        );
+
+        // Initial resize
+        this.onWindowResize();
+
+        // Start animation
+        this.animate();
+    }
+
+    loadImage(imageUrl) {
+        return new Promise((resolve, reject) => {
+            const image = new Image();
+            image.crossOrigin = "anonymous";
+            image.onload = () => {
+                const rect = this.container.getBoundingClientRect();
+                const scale = Math.min(
+                    (rect.width * 1) / image.width,
+                    (rect.height * 1) / image.height,
+                );
+
+                this.tempCanvas.width = image.width * scale;
+                this.tempCanvas.height = image.height * scale;
+
+                const x = (rect.width - this.tempCanvas.width) / 2;
+                const y =
+                    (rect.height - this.tempCanvas.height) / 2;
+
+                this.tempCtx.drawImage(
+                    image,
+                    0,
+                    0,
+                    this.tempCanvas.width,
+                    this.tempCanvas.height,
+                );
+                this.convertToParticles(x, y);
+                resolve();
+            };
+            image.onerror = reject;
+            image.src = imageUrl;
+        });
+    }
+
+    convertToParticles(offsetX, offsetY) {
+        const imageData = this.tempCtx.getImageData(
+            0,
+            0,
+            this.tempCanvas.width,
+            this.tempCanvas.height,
+        );
+        const pixels = imageData.data;
+        const width = this.tempCanvas.width;
+        const height = this.tempCanvas.height;
+
+        const bayerMatrix = [
+            [0.0 / 16.0, 8.0 / 16.0, 2.0 / 16.0, 10.0 / 16.0],
+            [12.0 / 16.0, 4.0 / 16.0, 14.0 / 16.0, 6.0 / 16.0],
+            [3.0 / 16.0, 11.0 / 16.0, 1.0 / 16.0, 9.0 / 16.0],
+            [15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0, 5.0 / 16.0],
+        ];
+
+        const stepSize = 2;
+        this.particles = [];
+
+        for (let x = 0; x < width; x += stepSize) {
+            for (let y = 0; y < height; y += stepSize) {
+                const i = (y * width + x) * 4;
+                const r = pixels[i];
+                const g = pixels[i + 1];
+                const b = pixels[i + 2];
+                const a = pixels[i + 3];
+
+                if (a < 128) continue;
+
+                const luminance =
+                    (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+
+                if (luminance > 0.05) {
+                    const bayerX = Math.floor(x / stepSize) % 4;
+                    const bayerY = Math.floor(y / stepSize) % 4;
+                    const bayerValue = bayerMatrix[bayerY][bayerX];
+
+                    const normalizedLuminance = Math.pow(
+                        luminance,
+                        0.8,
+                    );
+                    const shouldCreateParticle =
+                        normalizedLuminance > bayerValue;
+
+                    if (shouldCreateParticle) {
+                        const isWhite =
+                            luminance >
+                            0.5 + (bayerValue - 0.5) * 0.5;
+                        if (isWhite || bayerValue > 0.3) {
+                            const particle = new Particle(
+                                x + offsetX,
+                                y + offsetY,
+                                isWhite,
+                                bayerX,
+                                bayerY,
+                            );
+                            particle.canvas = this.canvas;
+                            this.particles.push(particle);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    onMouseMove(event) {
+        const rect = this.container.getBoundingClientRect();
+        this.mousePos.x = event.clientX - rect.left;
+        this.mousePos.y = event.clientY - rect.top;
+    }
+
+    // FREEAGENT: touch → the same mouse position the effect already reads
+    onTouch(event) {
+        const touch = event.touches[0];
+        if (!touch) return;
+        const rect = this.container.getBoundingClientRect();
+        this.mousePos.x = touch.clientX - rect.left;
+        this.mousePos.y = touch.clientY - rect.top;
+    }
+
+    onMouseLeave() {
+        this.mousePos.x = -1000;
+        this.mousePos.y = -1000;
+    }
+
+    onWindowResize() {
+        const rect = this.container.getBoundingClientRect();
+        this.canvas.width = rect.width;
+        this.canvas.height = rect.height;
+    }
+
+    // FREEAGENT: the sign-in screen hides once signed in; stop drawing then
+    stop() { this.stopped = true; }
+
+    animate() {
+        if (this.stopped) return;
+        requestAnimationFrame(this.animate.bind(this));
+        this.ctx.clearRect(
+            0,
+            0,
+            this.canvas.width,
+            this.canvas.height,
+        );
+
+        for (const particle of this.particles) {
+            particle.update(
+                this.mousePos.x,
+                this.mousePos.y,
+                this.dispersionRadius,
+            );
+            particle.draw(this.ctx);
+        }
+    }
+}
+
+// FREEAGENT: started by app.js when the sign-in screen is shown (the site starts it on DOMContentLoaded)
+window.CosmicStars = {
+    effect: null,
+    async start(selector) {
+        if (this.effect) return;
+        this.effect = new DitheredPixelEffect(selector);
+        try {
+            await this.effect.loadImage("images/allstars.png");
+        } catch (error) {
+            console.error("Failed to load image:", error);
+        }
     },
     stop() {
-      running = false; cancelAnimationFrame(raf);
-      if (!canvas) return;
-      for (const [type, fn] of listeners) canvas.removeEventListener(type, fn);
-      window.removeEventListener("resize", resize);
+        if (!this.effect) return;
+        this.effect.stop();
+        this.effect.canvas.remove();
+        this.effect = null;
     },
-  };
-  document.addEventListener("visibilitychange", () => {
-    if (!canvas) return;
-    if (document.hidden) { running = false; cancelAnimationFrame(raf); }
-    else if (!reduced && !canvas.closest("[hidden]")) { running = true; last = performance.now(); raf = requestAnimationFrame(frame); }
-  });
-})();
+};

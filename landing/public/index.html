@@ -6,7 +6,7 @@
 <title>freeagent</title>
 <meta name="description" content="Your coding agents on a box you own, from your phone.">
 <meta name="color-scheme" content="dark light">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#d9d6d6">
 <link rel="icon" href="images/favicon-32.png" type="image/png">
 <link rel="apple-touch-icon" href="images/favicon-256.png">
 <link rel="stylesheet" href="app.css?v=dev">
@@ -19,14 +19,12 @@
 
 <main>
   <section id="signed-out" hidden>
-    <canvas id="stars" aria-hidden="true"></canvas>
-    <div class="hero">
-      <h1 class="wordmark">freeagent</h1>
-    </div>
-    <div class="foot">
-      <button class="filled cosmic" id="signin-github">Continue with GitHub</button>
-      <p class="error" id="signed-out-error"></p>
-      <a class="lockup" href="https://cosmiclabs.org" target="_blank" rel="noopener" aria-label="Cosmic Labs"></a>
+    <div class="background"></div>
+    <div class="dithered-container" id="stars"></div>
+    <h1 class="wordmark">FREEAGENT</h1>
+    <div class="signin">
+      <button class="link" id="signin-github">CONTINUE WITH GITHUB</button>
+      <p class="cosmicbody error" id="signed-out-error"></p>
     </div>
   </section>
 
