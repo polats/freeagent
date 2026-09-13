@@ -50,9 +50,12 @@ function build(el) {
   // middle, mint on top. Thickness is random per line like the original (scaled for a phone), so the
   // bundle is a different brush on every load.
   ["#0f5c2e", "#2eaa4a", "#40ff00", "#baff00", "#a8ffc2"].forEach((color) => {
-    const thickness = random(14, 40);
-    const line = { spring: random(0.02, 0.1), friction: random(0.7, 0.95), mouseVelocity: new Vec3(), mouseOffset: new Vec3(random(-1, 1) * 0.02, random(-1, 1) * 0.02, 0), points: [] };
-    for (let i = 0; i < 22; i += 1) line.points.push(new Vec3());
+    // Phone tuning: the example's offsets (0.02) and tail easing (0.9) suit a mouse crossing a big
+    // screen; a thumb moves a few centimetres, so the lines fan wider, keep longer tails and stay
+    // fatter, or the bundle collapses into one thin trail.
+    const thickness = random(22, 52);
+    const line = { spring: random(0.03, 0.1), friction: random(0.72, 0.92), tail: random(0.55, 0.75), mouseVelocity: new Vec3(), mouseOffset: new Vec3(random(-1, 1) * 0.07, random(-1, 1) * 0.07, 0), points: [] };
+    for (let i = 0; i < 28; i += 1) line.points.push(new Vec3());
     line.polyline = new Polyline(gl, { points: line.points, vertex, fragment, uniforms: { uColor: { value: new Color(color) }, uThickness: { value: thickness }, uAlpha: { value: 0 } } });
     line.polyline.mesh.program.transparent = true; line.polyline.mesh.program.depthTest = false;
     line.polyline.mesh.setParent(scene);
@@ -78,7 +81,7 @@ function onLeave() { target = 0; }
 
 function frame() {
   if (!running) return;
-  alpha += (target - alpha) * (target ? 0.18 : 0.08);
+  alpha += (target - alpha) * (target ? 0.2 : 0.035);
   if (alpha > 0.002) {
     for (const line of lines) {
       for (let i = line.points.length - 1; i >= 0; i -= 1) {
@@ -87,7 +90,7 @@ function frame() {
           line.mouseVelocity.add(tmp).multiply(line.friction);
           line.points[i].add(line.mouseVelocity);
         } else {
-          line.points[i].lerp(line.points[i - 1], 0.9);
+          line.points[i].lerp(line.points[i - 1], line.tail);
         }
       }
       line.polyline.updateGeometry();
