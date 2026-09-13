@@ -2,7 +2,7 @@
 // Codrops article "Crafting Stylised Mouse Trails"): five screen-space polylines whose head springs
 // toward the finger — each with its own stiffness, friction and offset — and whose remaining points
 // ease toward the point ahead, so every line lags and overshoots differently and the bundle reads as
-// ribbons with weight. WebGL, one draw per line, cheap on a phone. Lime and white, on top of the
+// ribbons with weight. WebGL, one draw per line, cheap on a phone. Five greens, on top of the
 // star sky; fades in on touch and out on release.
 import { Renderer, Transform, Vec3, Color, Polyline } from "./vendor/ogl.js";
 
@@ -46,9 +46,12 @@ function build(el) {
   gl = renderer.gl; gl.clearColor(0, 0, 0, 0);
   scene = new Transform();
   lines = [];
-  // lime to white, thin to fat; the fattest is the palest so the bundle keeps a bright core
-  [["#baff00", 22], ["#cdff4d", 16], ["#e2ff8c", 12], ["#f4ffd6", 9], ["#ffffff", 6]].forEach(([color, thickness]) => {
-    const line = { spring: random(0.03, 0.09), friction: random(0.78, 0.93), mouseVelocity: new Vec3(), mouseOffset: new Vec3(random(-1, 1) * 0.02, random(-1, 1) * 0.02, 0), points: [] };
+  // The example's five-colour brush, in greens: deep forest under, the brand's two greens in the
+  // middle, mint on top. Thickness is random per line like the original (scaled for a phone), so the
+  // bundle is a different brush on every load.
+  ["#0f5c2e", "#2eaa4a", "#40ff00", "#baff00", "#a8ffc2"].forEach((color) => {
+    const thickness = random(14, 40);
+    const line = { spring: random(0.02, 0.1), friction: random(0.7, 0.95), mouseVelocity: new Vec3(), mouseOffset: new Vec3(random(-1, 1) * 0.02, random(-1, 1) * 0.02, 0), points: [] };
     for (let i = 0; i < 22; i += 1) line.points.push(new Vec3());
     line.polyline = new Polyline(gl, { points: line.points, vertex, fragment, uniforms: { uColor: { value: new Color(color) }, uThickness: { value: thickness }, uAlpha: { value: 0 } } });
     line.polyline.mesh.program.transparent = true; line.polyline.mesh.program.depthTest = false;
