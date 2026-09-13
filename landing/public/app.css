@@ -1,9 +1,12 @@
 /* Bento direction (design/DirectionC): tiles on a cool dark ground, IBM Plex Sans as in Collie. */
 @font-face{font-family:"IBM Plex Sans";src:url("fonts/ui-ibm-plex-sans-3.201-latin.woff2") format("woff2");font-weight:100 700;font-display:swap}
+/* Cosmic Labs brand face (cosmiclabs.org): PP Neue Bit, the pixel type behind COSMIC✦LABS. */
+@font-face{font-family:"PP Neue Bit";src:url("fonts/PPNeueBit-Bold.ttf") format("truetype");font-weight:700;font-display:swap}
 :root{
-  --bg:oklch(0.17 0.012 260);--tile:oklch(0.23 0.014 260);--tile-hi:oklch(0.27 0.016 260);--fg:oklch(0.96 0.005 260);--muted:oklch(0.68 0.02 260);
-  --edge:oklch(1 0 0 / 6%);--edge-hi:oklch(1 0 0 / 14%);--primary:oklch(0.96 0.005 260);--on-primary:oklch(0.17 0.012 260);
-  --running:oklch(0.74 0.16 152);--pending:oklch(0.82 0.15 82);--stopped:oklch(0.6 0.03 250);--failed:oklch(0.7 0.2 24);--danger:oklch(0.7 0.2 24);
+  --cosmic:#40ff00; /* cosmiclabs.org --cosmicgreen */
+  --bg:oklch(0.1 0.005 260);--tile:oklch(0.19 0.008 260);--tile-hi:oklch(0.23 0.01 260);--fg:oklch(0.96 0.005 260);--muted:oklch(0.68 0.02 260);
+  --edge:oklch(1 0 0 / 6%);--edge-hi:oklch(1 0 0 / 14%);--primary:oklch(0.96 0.005 260);--on-primary:oklch(0.1 0.005 260);
+  --running:var(--cosmic);--pending:oklch(0.82 0.15 82);--stopped:oklch(0.6 0.03 250);--failed:oklch(0.7 0.2 24);--danger:oklch(0.7 0.2 24);
   --scrim:oklch(0 0 0 / 55%);
 }
 @media (prefers-color-scheme: light){:root{
@@ -28,11 +31,20 @@ button{cursor:pointer;border:0;background:none;padding:0}
 
 main{max-width:720px;margin:0 auto;padding:8px 20px calc(24px + env(safe-area-inset-bottom))}
 
-/* signed out */
-#signed-out{min-height:calc(100dvh - 56px - env(safe-area-inset-top));display:flex;flex-direction:column}
-.hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;color:var(--fg)}
-.wordmark{font-size:28px;font-weight:600;letter-spacing:.01em}
-.foot{display:flex;flex-direction:column;gap:12px;align-items:stretch;padding-bottom:12px}
+/* signed out: the Cosmic Labs star field, black ground, neon green, pixel type */
+body:has(#signed-out:not([hidden])){background:#000}
+#signed-out{position:fixed;inset:0;display:flex;flex-direction:column;background:#000;color:var(--cosmic);padding:0 20px calc(20px + env(safe-area-inset-bottom))}
+#stars{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+#signed-out .hero,#signed-out .foot{position:relative;z-index:1;pointer-events:none}
+.hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
+.wordmark{margin:0;font:700 64px/1 "PP Neue Bit",ui-monospace,monospace;letter-spacing:.02em;color:var(--cosmic);text-shadow:0 0 18px oklch(0.85 0.28 135 / 55%),0 0 2px var(--cosmic)}
+.foot{display:flex;flex-direction:column;gap:12px;align-items:stretch;max-width:420px;width:100%;margin:0 auto}
+.foot>*{pointer-events:auto}
+.filled.cosmic{background:var(--cosmic);color:#000;border-radius:0;height:56px;font:700 26px/1 "PP Neue Bit",ui-monospace,monospace;letter-spacing:.02em;box-shadow:0 0 24px oklch(0.85 0.28 135 / 35%)}
+.filled.cosmic:active{background:#fff}
+#signed-out .error{color:var(--cosmic);text-align:center}
+.lockup{display:block;width:140px;height:14px;margin:12px auto 0;background:var(--cosmic);opacity:.55;-webkit-mask:url("images/cosmiclabs-lockup.png") center/contain no-repeat;mask:url("images/cosmiclabs-lockup.png") center/contain no-repeat}
+.lockup:active{opacity:1}
 .quiet{color:var(--muted);text-decoration:none;text-align:center;font-size:14px;padding:10px}
 .quiet.left{text-align:left;padding:0 0 8px}
 

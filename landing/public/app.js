@@ -508,9 +508,11 @@ async function render() {
   renderAccounts();
   const signedIn = Boolean(user[MAIN]);
   $("signed-out").hidden = signedIn;
+  $("topbar").hidden = !signedIn; // the sign-in screen says "freeagent" once, in the star field
   $("boxes-view").hidden = !signedIn;
   $("new-box").hidden = !signedIn;
-  if (!signedIn) { clearTimeout(pollTimer); return; }
+  if (!signedIn) { clearTimeout(pollTimer); window.Stars?.start($("stars")); return; }
+  window.Stars?.stop();
   if (boxes.length === 0 && !$("cards").hasChildNodes()) $("skeleton").hidden = false;
   await refresh();
   $("skeleton").hidden = true;
@@ -518,7 +520,7 @@ async function render() {
 
 async function main() {
   await Promise.all(PROVIDERS.map(detect));
-  if (!config.github) { $("signed-out").hidden = false; $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
+  if (!config.github) { $("signed-out").hidden = false; window.Stars?.start($("stars")); $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
 
   $("signin-github").onclick = () => signIn("github");
   $("new-box").onclick = openCreate;
