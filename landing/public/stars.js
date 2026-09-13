@@ -11,7 +11,7 @@
 
   let canvas, ctx, w = 0, h = 0, N = 0, raf = 0, running = false, last = 0, ro = null;
   // struct of arrays
-  let X, Y, Z, VX, VY, HX, HY, HEAT, PH, TW, PX, PY, LIMEY;
+  let X, Y, Z, VX, VY, HX, HY, HEAT, PH, TW, PX, PY, LIMEY, OX, OY;
   // short-lived things: sparks thrown by the hand, shockwave rings from a tap, the comet trail
   const SPARKS = 320; const sx = new Float32Array(SPARKS), sy = new Float32Array(SPARKS), svx = new Float32Array(SPARKS), svy = new Float32Array(SPARKS), sl = new Float32Array(SPARKS), ss = new Float32Array(SPARKS); let sparkNext = 0;
   const rings = []; const trail = [];
@@ -38,9 +38,9 @@
     N = Math.max(220, Math.min(720, Math.round((w * h) / 1500)));
     X = new Float32Array(N); Y = new Float32Array(N); Z = new Float32Array(N);
     VX = new Float32Array(N); VY = new Float32Array(N); HX = new Float32Array(N); HY = new Float32Array(N);
-    HEAT = new Float32Array(N); PH = new Float32Array(N); TW = new Float32Array(N); PX = new Float32Array(N); PY = new Float32Array(N); LIMEY = new Float32Array(N);
+    HEAT = new Float32Array(N); PH = new Float32Array(N); TW = new Float32Array(N); PX = new Float32Array(N); PY = new Float32Array(N); LIMEY = new Float32Array(N); OX = new Float32Array(N); OY = new Float32Array(N);
     for (let i = 0; i < N; i += 1) {
-      X[i] = PX[i] = Math.random() * w; Y[i] = PY[i] = Math.random() * h;
+      X[i] = PX[i] = OX[i] = Math.random() * w; Y[i] = PY[i] = OY[i] = Math.random() * h;
       Z[i] = 0.25 + Math.random() ** 2 * 0.75;              // most stars far and small
       const a = Math.random() * Math.PI * 2, sp = 2 + Z[i] * 6; // slow home drift, faster when near
       HX[i] = Math.cos(a) * sp; HY[i] = Math.sin(a) * sp;
@@ -68,14 +68,19 @@
     const hvx = hand.vx, hvy = hand.vy, hspeed = Math.hypot(hvx, hvy);
     for (let i = 0; i < N; i += 1) {
       PX[i] = X[i]; PY[i] = Y[i];
-      let ax = (HX[i] - VX[i]) * 1.2, ay = (HY[i] - VY[i]) * 1.2; // ease back to the drift
+      // the home drifts slowly and wraps; the star is a damped spring on it, so whatever the hand
+      // does, the star is back within a second or so and the sky never goes dark around the finger
+      OX[i] += HX[i] * dt; OY[i] += HY[i] * dt;
+      if (OX[i] < -20) OX[i] += w + 40; else if (OX[i] > w + 20) OX[i] -= w + 40;
+      if (OY[i] < -20) OY[i] += h + 40; else if (OY[i] > h + 20) OY[i] -= h + 40;
+      let ax = (OX[i] - X[i]) * 4 - VX[i] * 2.2, ay = (OY[i] - Y[i]) * 4 - VY[i] * 2.2;
       if (hand.active) {
         const dx = X[i] - hand.x, dy = Y[i] - hand.y, d2 = dx * dx + dy * dy;
         if (d2 < REACH2) {
           const d = Math.sqrt(d2) + 4, k = (1 - d / REACH), z = Z[i];
-          // stirred along with the finger (its velocity), and pushed gently aside so it parts around it
-          ax += hvx * k * 9 * z + (dx / d) * k * 160 * z;
-          ay += hvy * k * 9 * z + (dy / d) * k * 160 * z;
+          // stirred along with the finger (its velocity) and eased aside a little; the spring brings it back
+          ax += hvx * k * 9 * z + (dx / d) * k * 70 * z;
+          ay += hvy * k * 9 * z + (dy / d) * k * 70 * z;
           if (hspeed > 40 || hand.down) HEAT[i] = Math.min(1, HEAT[i] + k * dt * (hand.down ? 6 : 3));
         }
       }
@@ -85,8 +90,8 @@
       X[i] += VX[i] * dt; Y[i] += VY[i] * dt;
       HEAT[i] = Math.max(0, HEAT[i] - dt * 0.9);
       // wrap, and forget the previous position across the seam so no streak spans the screen
-      if (X[i] < -20) { X[i] += w + 40; PX[i] = X[i]; } else if (X[i] > w + 20) { X[i] -= w + 40; PX[i] = X[i]; }
-      if (Y[i] < -20) { Y[i] += h + 40; PY[i] = Y[i]; } else if (Y[i] > h + 20) { Y[i] -= h + 40; PY[i] = Y[i]; }
+      if (X[i] < -20) { X[i] += w + 40; OX[i] += w + 40; PX[i] = X[i]; } else if (X[i] > w + 20) { X[i] -= w + 40; OX[i] -= w + 40; PX[i] = X[i]; }
+      if (Y[i] < -20) { Y[i] += h + 40; OY[i] += h + 40; PY[i] = Y[i]; } else if (Y[i] > h + 20) { Y[i] -= h + 40; OY[i] -= h + 40; PY[i] = Y[i]; }
     }
     // the finger's velocity decays between events, so a still finger stops stirring
     hand.vx *= Math.max(0, 1 - dt * 8); hand.vy *= Math.max(0, 1 - dt * 8);
@@ -111,7 +116,7 @@
       const dx = X[i] - x, dy = Y[i] - y, d2 = dx * dx + dy * dy;
       if (d2 < 190 * 190) {
         const d = Math.sqrt(d2) + 6, k = 1 - d / 190;
-        VX[i] += (dx / d) * k * (380 + 420 * Z[i]); VY[i] += (dy / d) * k * (380 + 420 * Z[i]);
+        VX[i] += (dx / d) * k * (300 + 380 * Z[i]); VY[i] += (dy / d) * k * (300 + 380 * Z[i]);
         HEAT[i] = 1;
       }
     }
