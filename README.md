@@ -42,8 +42,10 @@ creates boxes through the providers' own APIs and lists, opens and deletes the o
 | Railway, or any Docker host | you | `COLLIE_AUTH_TOKEN`, plus `FREEAGENT_GITHUB_OWNER` to pair by GitHub sign-in | attach a volume at `/data` |
 
 GitHub is the account: it signs you in to the landing page on every device, and it is the identity a
-box recognises. Hugging Face and Railway are connected to it, as places boxes can also run. The
-token is a root credential to a shell. The entrypoint refuses to start without one on any platform
+box recognises. Hugging Face is connected to it, as a place boxes can also run (Railway is wired
+but parked). Connected accounts travel with the GitHub account: the page keeps them in a private
+repository `freeagent-account` in your own GitHub, so a new device needs only the GitHub sign-in.
+The GitHub token itself is never stored anywhere. The Collie token is a root credential to a shell. The entrypoint refuses to start without one on any platform
 whose URL is public; Codespaces are the exception because the port is already private.
 
 ## Starting from a repository

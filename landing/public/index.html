@@ -23,7 +23,6 @@
     </div>
     <div class="foot">
       <button class="filled" id="signin-github">Continue with GitHub</button>
-      <a href="#" class="quiet" id="github-device">Sign in with a code</a>
       <p class="error" id="signed-out-error"></p>
     </div>
   </section>
@@ -95,15 +94,6 @@
     <p class="error" id="railway-error"></p>
     <div class="actions"><button type="button" class="text" id="railway-cancel">Cancel</button><button type="submit" class="filled" id="railway-submit">Connect</button></div>
   </form>
-</dialog>
-
-<!-- Device code -->
-<dialog class="sheet" id="device">
-  <div class="handle"></div>
-  <h2>Enter this code on GitHub</h2>
-  <p class="code"><code id="device-code"></code></p>
-  <a id="device-link" class="filled btn" href="https://github.com/login/device" target="_blank" rel="noopener">Open github.com/login/device</a>
-  <div class="actions"><button class="text" id="device-cancel">Cancel</button></div>
 </dialog>
 
 <div id="toast" role="status" aria-live="polite" hidden></div>

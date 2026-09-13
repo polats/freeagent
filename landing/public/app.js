@@ -6,12 +6,17 @@
 //
 // Accounts follow crux-android's model: GitHub is THE account — it signs you in, and it is the
 // identity every box recognises (a box knows its owner's GitHub login and pairs any device that
-// proves it holds that sign-in). Hugging Face and Railway are connected to it: places boxes can
-// also run, never a way in on their own.
+// proves it holds that sign-in). Hugging Face is connected to it: a place boxes can also run,
+// never a way in on its own. Connected accounts travel with the GitHub account (see "Account
+// store" below), so signing in to GitHub on a new device brings them along.
+//
+// Railway is wired (token paste + whoami relay) but parked: not in PROVIDERS, so it is never
+// detected, offered or restored. Add it back to PROVIDERS and LINKED to re-enable.
 
 const CFG = window.FREEAGENT;
 const MAIN = "github";
-const PROVIDERS = ["github", "hf", "railway"]; // fixed order, like the app's Accounts screen
+const PROVIDERS = ["github", "hf"]; // fixed order, like the app's Accounts screen
+const LINKED = PROVIDERS.filter((p) => p !== MAIN); // the accounts that ride with the GitHub one
 const API = { github: "https://api.github.com", hf: "https://huggingface.co" };
 const LABEL = { github: "GitHub", hf: "Hugging Face", railway: "Railway" };
 const SCOPE = { github: "codespace repo", hf: "openid profile manage-repos" };
@@ -76,29 +81,13 @@ async function finishSignIn(params) {
   return tx;
 }
 
-// GitHub device-code fallback for an OAuth App whose callback is misconfigured.
-async function signInWithCode() {
-  const start = await (await fetch("/api/auth/github/device", { method: "POST" })).json();
-  if (start.error) throw new Error(`GitHub: ${start.error_description || start.error}. Is "Enable Device Flow" ticked on the OAuth App?`);
-  $("device-code").textContent = start.user_code; $("device-link").href = start.verification_uri; $("device").showModal();
-  const deadline = Date.now() + start.expires_in * 1000;
-  let interval = (start.interval || 5) * 1000;
-  while (Date.now() < deadline && $("device").open) {
-    await sleep(interval);
-    const res = await (await fetch("/api/auth/github/poll", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ device_code: start.device_code }) })).json();
-    if (res.access_token) { storeToken("github", res.access_token); $("device").close(); return render(); }
-    if (res.error === "slow_down") interval += 5000;
-    else if (res.error !== "authorization_pending") { $("device").close(); throw new Error(`GitHub: ${res.error_description || res.error}`); }
-  }
-}
-
 // ---- Provider APIs -----------------------------------------------------------------------------------
 async function api(p, path, init = {}) {
   const res = await fetch(`${API[p]}${path}`, {
     ...init,
     headers: { authorization: `Bearer ${tokenOf(p)}`, ...(p === "github" ? { accept: "application/vnd.github+json" } : {}), ...(init.body ? { "content-type": "application/json" } : {}) },
   });
-  if (res.status === 401) { dropToken(p); throw new Error(`Your ${LABEL[p]} access expired. Sign in again to continue.`); }
+  if (res.status === 401) { dropToken(p); if (p !== MAIN) saveConnected().catch(() => {}); throw new Error(`Your ${LABEL[p]} access expired. Sign in again to continue.`); }
   const json = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) { const e = new Error(json?.message ?? json?.error ?? `HTTP ${res.status}`); e.status = res.status; throw e; }
   return json;
@@ -118,6 +107,64 @@ async function railwayWhoami(token) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.name) { if (res.status === 400) dropToken("railway"); throw new Error(body.error ? `Railway: ${body.error}` : "Railway did not recognise that token."); }
   return body;
+}
+
+// ---- Account store ------------------------------------------------------------------------------------------
+// Connected accounts ride with the GitHub account, in the user's OWN GitHub: a private repository
+// `freeagent-account` holding `accounts.json`. Nothing of ours in the middle, and the thing that
+// guards it is the same GitHub login that signs you in here. The GitHub token itself is never
+// stored anywhere — it IS the login. Restored on every GitHub sign-in (a device with no local copy
+// takes the stored one), written on connect and disconnect. Sign out leaves it alone.
+const STORE_REPO = "freeagent-account";
+const STORE_PATH = "accounts.json";
+let storeSha = null;
+const storeUrl = () => `/repos/${user.github}/${STORE_REPO}/contents/${STORE_PATH}`;
+
+async function storeRead() {
+  try {
+    const f = await api("github", storeUrl());
+    storeSha = f.sha;
+    return JSON.parse(atob(f.content.replace(/\n/g, "")));
+  } catch (e) {
+    if (e.status === 404) { storeSha = null; return null; }
+    throw e;
+  }
+}
+
+async function storeWrite(data) {
+  const put = () => api("github", storeUrl(), { method: "PUT", body: JSON.stringify({ message: "freeagent: connected accounts", content: btoa(JSON.stringify(data)), ...(storeSha ? { sha: storeSha } : {}) }) });
+  try {
+    storeSha = (await put()).content.sha;
+  } catch (e) {
+    if (e.status === 404) {
+      // No repository yet: make it (private) and write again. Contents PUT creates the first commit.
+      await api("github", "/user/repos", { method: "POST", body: JSON.stringify({ name: STORE_REPO, private: true, description: "freeagent: connected accounts. Private. Do not share.", has_issues: false, has_wiki: false, has_projects: false, auto_init: false }) });
+      storeSha = (await put()).content.sha;
+    } else if (e.status === 409 || e.status === 422) {
+      // Another device wrote first: take its sha and write once more.
+      await storeRead();
+      storeSha = (await put()).content.sha;
+    } else throw e;
+  }
+}
+
+/** A device with no local copy of a connected account takes the stored one. Local wins otherwise. */
+async function restoreConnected() {
+  if (!user.github) return;
+  const stored = await storeRead().catch(() => null);
+  if (!stored) return;
+  for (const p of LINKED) {
+    const t = stored[p];
+    if (t?.token && t.scope === SCOPE_TAG[p] && !tokenOf(p)) storeToken(p, t.token);
+  }
+}
+
+/** Write what is connected right now. Called after a connect, a disconnect, or an expiry. */
+async function saveConnected() {
+  if (!user.github) return;
+  const data = {};
+  for (const p of LINKED) if (tokenOf(p)) data[p] = { token: tokenOf(p), scope: SCOPE_TAG[p] };
+  await storeWrite(data);
 }
 
 // ---- Boxes ------------------------------------------------------------------------------------------------
@@ -450,7 +497,9 @@ function schedulePoll() {
 }
 
 async function render() {
-  await Promise.all(PROVIDERS.map(whoami));
+  await whoami(MAIN);
+  await restoreConnected();
+  await Promise.all(LINKED.map(whoami));
   renderAccounts();
   const signedIn = Boolean(user[MAIN]);
   $("signed-out").hidden = signedIn;
@@ -478,7 +527,7 @@ async function main() {
   $("accounts-close").onclick = () => $("accounts").close();
   $("acct-github-connect").onclick = () => signIn("github");
   $("acct-hf-connect").onclick = () => signIn("hf");
-  $("acct-hf-disconnect").onclick = () => { dropToken("hf"); toast("Hugging Face disconnected"); $("accounts").close(); render(); };
+  $("acct-hf-disconnect").onclick = async () => { dropToken("hf"); $("accounts").close(); await saveConnected().catch((e) => toast(e.message)); toast("Hugging Face disconnected"); render(); };
   $("acct-railway-connect").onclick = () => { $("accounts").close(); $("railway-token").value = ""; $("railway-error").textContent = ""; $("railway").showModal(); };
   $("acct-railway-disconnect").onclick = () => { dropToken("railway"); toast("Railway disconnected"); $("accounts").close(); render(); };
   $("railway-cancel").onclick = () => $("railway").close();
@@ -488,24 +537,23 @@ async function main() {
     try {
       const me = await railwayWhoami($("railway-token").value.trim());
       storeToken("railway", $("railway-token").value.trim());
-      $("railway").close(); toast(`Railway connected as ${me.name}`); await render();
+      $("railway").close(); toast(`Railway connected as ${me.name}`); await saveConnected().catch(() => {}); await render();
     } catch (e) { $("railway-error").textContent = e.message; }
     $("railway-submit").disabled = false;
   };
   $("signout").onclick = () => { for (const p of PROVIDERS) dropToken(p); toast("Signed out"); $("accounts").close(); render(); };
-  $("github-device").onclick = (ev) => { ev.preventDefault(); signInWithCode().catch((e) => { $("signed-out-error").textContent = e.message; }); };
   $("box-menu-close").onclick = () => $("box-menu").close();
-  $("device-cancel").onclick = () => $("device").close();
   $("confirm-cancel").onclick = () => $("confirm").close();
   document.addEventListener("visibilitychange", () => { if (!document.hidden && user[MAIN]) refresh(); });
 
   const params = new URLSearchParams(location.search);
   if (params.get("error")) { history.replaceState(null, "", "/"); $("signed-out-error").textContent = `Sign-in failed: ${params.get("error_description") ?? params.get("error")}`; }
-  let intent = null;
+  let intent = null, via = null;
   if (params.get("code")) {
-    try { intent = (await finishSignIn(params)).intent; toast("Signed in"); } catch (e) { $("signed-out-error").textContent = e.message; }
+    try { const tx = await finishSignIn(params); intent = tx.intent; via = tx.p; toast(via === MAIN ? "Signed in" : `${LABEL[via]} connected`); } catch (e) { $("signed-out-error").textContent = e.message; }
   }
   await render();
+  if (via && via !== MAIN) saveConnected().catch((e) => toast(e.message));
   if (intent === "create" && user[MAIN]) openCreate();
 }
 
