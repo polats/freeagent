@@ -38,7 +38,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let renderer, gl, scene, canvas, lines = [], raf = 0, running = false, alpha = 0, target = 0;
 const mouse = new Vec3(), tmp = new Vec3();
-let hasMouse = false;
+let hasMouse = false; // eslint: kept for parity with the example's mouse/touch split
 
 function build(el) {
   canvas = el;
@@ -63,21 +63,27 @@ function build(el) {
   });
   resize();
 }
+// The box the brush fills is the canvas's parent (the sign-in screen), not the canvas: OGL writes an
+// inline width/height on the canvas itself — 300×150 at construction — which beats the CSS
+// percentage, so reading the canvas back would keep it at 300×150 forever (that was the bug).
+function box() { return (canvas.parentElement ?? document.documentElement).getBoundingClientRect(); }
 function resize() {
-  const r = canvas.getBoundingClientRect();
-  renderer.setSize(Math.max(1, r.width), Math.max(1, r.height));
+  const r = box();
+  renderer.setSize(Math.max(1, Math.round(r.width)), Math.max(1, Math.round(r.height)));
   for (const l of lines) l.polyline.resize();
 }
 function setMouse(clientX, clientY) {
-  const r = canvas.getBoundingClientRect();
+  const r = box();
   mouse.set(((clientX - r.left) / r.width) * 2 - 1, ((clientY - r.top) / r.height) * -2 + 1, 0);
 }
 function snapTo(x, y) { setMouse(x, y); for (const l of lines) { for (const p of l.points) p.copy(mouse); l.mouseVelocity.set(0, 0, 0); } }
 
-function onDown(ev) { if (!running) return; hasMouse = ev.pointerType === "mouse"; if (alpha < 0.05) snapTo(ev.clientX, ev.clientY); else setMouse(ev.clientX, ev.clientY); target = 1; }
-function onMove(ev) { if (!running) return; setMouse(ev.clientX, ev.clientY); if (ev.pointerType === "mouse") { hasMouse = true; if (alpha < 0.05) snapTo(ev.clientX, ev.clientY); target = 1; } }
-function onUp(ev) { if (ev.pointerType !== "mouse") target = 0; }
+function onMove(ev) { if (!running || ev.pointerType !== "mouse") return; hasMouse = true; if (alpha < 0.05) snapTo(ev.clientX, ev.clientY); else setMouse(ev.clientX, ev.clientY); target = 1; }
 function onLeave() { target = 0; }
+function touchAt(ev) { const t = ev.touches[0] ?? ev.changedTouches[0]; return t ? [t.clientX, t.clientY] : null; }
+function onTouchStart(ev) { if (!running) return; const p = touchAt(ev); if (!p) return; if (alpha < 0.05) snapTo(...p); else setMouse(...p); target = 1; }
+function onTouchMove(ev) { if (!running) return; const p = touchAt(ev); if (p) { setMouse(...p); target = 1; } }
+function onTouchEnd(ev) { if (ev.touches.length === 0) target = 0; }
 
 function frame() {
   if (!running) return;
@@ -101,7 +107,7 @@ function frame() {
   raf = requestAnimationFrame(frame);
 }
 
-const listeners = [["pointerdown", onDown], ["pointermove", onMove], ["pointerup", onUp], ["pointercancel", onUp]];
+const listeners = [["pointermove", onMove], ["touchstart", onTouchStart], ["touchmove", onTouchMove], ["touchend", onTouchEnd], ["touchcancel", onTouchEnd]];
 let ro = null;
 window.Trails = {
   start(el) {
@@ -111,7 +117,7 @@ window.Trails = {
     try { if (!renderer || canvas !== el) build(el); else resize(); } catch (e) { console.warn("trails: WebGL unavailable", e); return; }
     for (const [type, fn] of listeners) window.addEventListener(type, fn, { passive: true });
     document.addEventListener("pointerleave", onLeave);
-    ro = new ResizeObserver(resize); ro.observe(el);
+    ro = new ResizeObserver(resize); ro.observe(el.parentElement ?? el);
     running = true; alpha = 0; target = 0; raf = requestAnimationFrame(frame);
   },
   stop() {
