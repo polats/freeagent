@@ -14,7 +14,12 @@
   let X, Y, Z, VX, VY, HX, HY, HEAT, PH, TW, PX, PY, LIMEY, OX, OY;
   // short-lived things: sparks thrown by the hand, shockwave rings from a tap, the comet trail
   const SPARKS = 320; const sx = new Float32Array(SPARKS), sy = new Float32Array(SPARKS), svx = new Float32Array(SPARKS), svy = new Float32Array(SPARKS), sl = new Float32Array(SPARKS), ss = new Float32Array(SPARKS); let sparkNext = 0;
-  const rings = []; const trail = [];
+  const rings = [];
+  // The ribbon: a chain of nodes on springs, each following the one before it (Codrops' "stylised
+  // mouse trails" recipe — springs instead of linear easing). It lags and overshoots like something
+  // with mass, and when the finger lifts it catches up with itself and folds away.
+  const CHAIN = 22; const cx = new Float32Array(CHAIN), cy = new Float32Array(CHAIN), cvx = new Float32Array(CHAIN), cvy = new Float32Array(CHAIN);
+  let ribbon = 0; // 0..1 visibility, eased
   // the hand
   const hand = { x: -1e4, y: -1e4, vx: 0, vy: 0, down: false, active: false, downX: 0, downY: 0, downAt: 0, moved: 0 };
   const lean = { x: 0, y: 0 }; // parallax offset, eased toward the finger
@@ -47,7 +52,7 @@
       PH[i] = Math.random() * Math.PI * 2; TW[i] = 0.5 + Math.random() * 1.5;
       LIMEY[i] = Math.random() < 0.34 ? 0.55 + Math.random() * 0.45 : 0; // a third of the sky is lime at rest
     }
-    sl.fill(0); rings.length = 0; trail.length = 0;
+    sl.fill(0); rings.length = 0; ribbon = 0;
   }
 
   function resize() {
@@ -78,9 +83,11 @@
         const dx = X[i] - hand.x, dy = Y[i] - hand.y, d2 = dx * dx + dy * dy;
         if (d2 < REACH2) {
           const d = Math.sqrt(d2) + 4, k = (1 - d / REACH), z = Z[i];
-          // stirred along with the finger (its velocity) and eased aside a little; the spring brings it back
-          ax += hvx * k * 9 * z + (dx / d) * k * 70 * z;
-          ay += hvy * k * 9 * z + (dy / d) * k * 70 * z;
+          // stirred along with the finger, eased aside a little, and curled around it (a tangential
+          // push that turns the wake into a slow vortex); the spring brings every star back
+          const tx_ = -dy / d, ty_ = dx / d;
+          ax += hvx * k * 9 * z + (dx / d) * k * 55 * z + tx_ * k * hspeed * 0.9 * z;
+          ay += hvy * k * 9 * z + (dy / d) * k * 55 * z + ty_ * k * hspeed * 0.9 * z;
           if (hspeed > 40 || hand.down) HEAT[i] = Math.min(1, HEAT[i] + k * dt * (hand.down ? 6 : 3));
         }
       }
@@ -98,10 +105,18 @@
     // sparks fly, slow and die
     for (let i = 0; i < SPARKS; i += 1) {
       if (sl[i] <= 0) continue;
-      sx[i] += svx[i] * dt; sy[i] += svy[i] * dt; svx[i] *= 1 - dt * 2.2; svy[i] *= 1 - dt * 2.2; sl[i] -= dt * 1.6;
+      svy[i] += 90 * dt; // a little gravity: they arc and settle instead of shooting straight
+      sx[i] += svx[i] * dt; sy[i] += svy[i] * dt; svx[i] *= 1 - dt * 1.6; svy[i] *= 1 - dt * 1.6; sl[i] -= dt * 1.1;
     }
     for (let i = rings.length - 1; i >= 0; i -= 1) { const r = rings[i]; r.r += (420 - r.r * 0.6) * dt; r.life -= dt * 1.4; if (r.life <= 0) rings.splice(i, 1); }
-    const cut = t - 420; while (trail.length && trail[0].t < cut) trail.shift();
+    // ribbon: the head eases to the finger, every other node springs to the one ahead
+    const target = hand.active ? 1 : 0; ribbon += (target - ribbon) * Math.min(1, dt * (target ? 10 : 3));
+    const k = 260, damp = 0.78;
+    for (let i = 0; i < CHAIN; i += 1) {
+      const gx = i === 0 ? hand.x : cx[i - 1], gy = i === 0 ? hand.y : cy[i - 1];
+      cvx[i] = (cvx[i] + (gx - cx[i]) * k * dt) * damp; cvy[i] = (cvy[i] + (gy - cy[i]) * k * dt) * damp;
+      cx[i] += cvx[i] * dt * 6; cy[i] += cvy[i] * dt * 6;
+    }
   }
 
   function spark(x, y, vx, vy, size) {
@@ -144,14 +159,22 @@
       ctx.drawImage(sprites.white, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2);
       if (lime > 0.02) { ctx.globalAlpha = alpha * lime; ctx.drawImage(sprites.lime, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2); }
     }
-    // the comet trail behind the finger: a fading lime ribbon
-    if (trail.length > 1) {
-      ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = LIME;
-      for (let i = 1; i < trail.length; i += 1) {
-        const a = trail[i], b = trail[i - 1], age = (t - a.t) / 420;
-        ctx.globalAlpha = (1 - age) * 0.55; ctx.lineWidth = (1 - age) * 14 + 1;
-        ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(a.x, a.y); ctx.stroke();
+    // the ribbon: a tapered lime stroke with a soft halo and a thin white core, head to tail
+    if (ribbon > 0.02) {
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      for (let pass = 0; pass < 3; pass += 1) {
+        for (let i = 1; i < CHAIN; i += 1) {
+          const f = 1 - i / CHAIN; // 1 at the head, 0 at the tail
+          if (pass === 0) { ctx.strokeStyle = LIME; ctx.globalAlpha = ribbon * f * 0.16; ctx.lineWidth = 34 * f + 6; }
+          else if (pass === 1) { ctx.strokeStyle = LIME; ctx.globalAlpha = ribbon * f * 0.7; ctx.lineWidth = 11 * f + 1; }
+          else { ctx.strokeStyle = "rgb(244 255 214)"; ctx.globalAlpha = ribbon * f * f * 0.8; ctx.lineWidth = 3 * f + 0.5; }
+          ctx.beginPath(); ctx.moveTo(cx[i - 1], cy[i - 1]); ctx.lineTo(cx[i], cy[i]); ctx.stroke();
+        }
       }
+      // the head: a bright bead where the finger is
+      const hs = 10 + Math.min(14, hspeedNow() * 0.03);
+      ctx.globalAlpha = ribbon * 0.9; ctx.drawImage(sprites.lime, cx[0] - hs, cy[0] - hs, hs * 2, hs * 2);
+      ctx.globalAlpha = ribbon * 0.9; ctx.drawImage(sprites.white, cx[0] - hs * 0.5, cy[0] - hs * 0.5, hs, hs);
     }
     for (let i = 0; i < SPARKS; i += 1) {
       if (sl[i] <= 0) continue;
@@ -167,6 +190,8 @@
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
   }
 
+  function hspeedNow() { return Math.hypot(hand.vx, hand.vy); }
+
   function frame(now) {
     if (!running) return;
     const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
@@ -180,18 +205,17 @@
     const p = at(ev); hand.x = hand.downX = p.x; hand.y = hand.downY = p.y; hand.vx = hand.vy = 0; hand.moved = 0; hand.downAt = performance.now(); hand.down = true; hand.active = true;
     canvas.setPointerCapture?.(ev.pointerId);
     rings.push({ x: p.x, y: p.y, r: 4, life: 0.6 }); // the finger lands: a small ring, at once
-    trail.length = 0; trail.push({ x: p.x, y: p.y, t: performance.now() });
+    if (ribbon < 0.05) { cx.fill(p.x); cy.fill(p.y); cvx.fill(0); cvy.fill(0); } // start the ribbon where the finger is
   }
   function onMove(ev) {
-    const p = at(ev), now = performance.now();
+    const p = at(ev);
     if (hand.active) {
       const dx = p.x - hand.x, dy = p.y - hand.y, d = Math.hypot(dx, dy);
       hand.vx = hand.vx * 0.5 + dx * 30; hand.vy = hand.vy * 0.5 + dy * 30; hand.moved += d;
       if (hand.down || ev.pointerType === "mouse") {
-        trail.push({ x: p.x, y: p.y, t: now });
-        // sparks peel off the swipe, more the faster it goes
-        const n = Math.min(6, Math.round(d / 6));
-        for (let k = 0; k < n; k += 1) { const f = k / n; spark(hand.x + dx * f, hand.y + dy * f, -dx * 6 + (Math.random() - 0.5) * 160, -dy * 6 + (Math.random() - 0.5) * 160, 1 + Math.random() * 2); }
+        // a few embers peel off behind the head and drift, more the faster it goes
+        const n = Math.min(3, Math.round(d / 10));
+        for (let k = 0; k < n; k += 1) { const f = k / Math.max(1, n); spark(hand.x + dx * f, hand.y + dy * f, -dx * 3 + (Math.random() - 0.5) * 90, -dy * 3 + (Math.random() - 0.5) * 90 - 20, 0.8 + Math.random() * 1.6); }
       }
     }
     hand.x = p.x; hand.y = p.y; hand.active = true;
@@ -201,7 +225,7 @@
     hand.down = false;
     if (ev.pointerType !== "mouse") hand.active = false; // a lifted finger is gone; a mouse stays
   }
-  function onLeave() { hand.active = false; hand.down = false; trail.length = 0; }
+  function onLeave() { hand.active = false; hand.down = false; }
   const listeners = [["pointerdown", onDown], ["pointermove", onMove], ["pointerup", onUp], ["pointercancel", onUp], ["pointerleave", onLeave]];
 
   window.Sky = {
