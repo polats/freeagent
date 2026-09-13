@@ -62,7 +62,7 @@ function build(el) {
   // Phone tuning: the example's offsets (0.02) and tail easing (0.9) suit a mouse crossing a big
   // screen; a thumb moves a few centimetres, so the lines fan wider, keep longer tails and stay
   // fatter, or the bundle collapses into one thin trail.
-  [["#2ed600", 30, 0.55], ["#40ff00", 58, 0.6], ["#40ff00", 42, 0.5], ["#baff00", 24, 0.55], ["#a8ffc2", 16, 0.5]].forEach(([color, base, opacity]) => {
+  [["#2ed600", 40, 0.6], ["#40ff00", 76, 0.85], ["#40ff00", 56, 0.75], ["#baff00", 32, 0.55], ["#a8ffc2", 22, 0.5]].forEach(([color, base, opacity]) => {
     const thickness = base * random(0.85, 1.2);
     const line = { opacity, spring: random(0.03, 0.1), friction: random(0.72, 0.92), tail: random(0.55, 0.75), mouseVelocity: new Vec3(), mouseOffset: new Vec3(random(-1, 1) * 0.07, random(-1, 1) * 0.07, 0), points: [] };
     for (let i = 0; i < 28; i += 1) line.points.push(new Vec3());
