@@ -1,7 +1,7 @@
-// The sign-in sky. A few hundred stars in three depths that drift, twinkle and answer the hand:
-// dragging stirs them along with the finger, with the ones you touch lighting up lime and cooling
-// back to white; a tap sends the nearby stars streaking outward like shooting stars; the whole
-// field leans a little toward the finger for depth. Built the way the fast ones are built —
+// The sign-in sky. Several hundred stars in three depths — a third of them lime — that drift,
+// twinkle and answer the hand: a swipe draws a lime comet trail, throws sparks and stirs the stars
+// along, heating the touched ones lime; a tap fires a shockwave ring, a burst of sparks and sends
+// the nearby stars streaking outward; the whole field leans a little toward the finger for depth. Built the way the fast ones are built —
 // struct-of-arrays in Float32Arrays, one canvas, pre-rendered glow sprites drawn additively, pixel
 // ratio capped, the loop stopped when the screen is hidden — so it holds 60fps on a phone.
 (() => {
@@ -11,7 +11,10 @@
 
   let canvas, ctx, w = 0, h = 0, N = 0, raf = 0, running = false, last = 0, ro = null;
   // struct of arrays
-  let X, Y, Z, VX, VY, HX, HY, HEAT, PH, TW, PX, PY;
+  let X, Y, Z, VX, VY, HX, HY, HEAT, PH, TW, PX, PY, LIMEY;
+  // short-lived things: sparks thrown by the hand, shockwave rings from a tap, the comet trail
+  const SPARKS = 320; const sx = new Float32Array(SPARKS), sy = new Float32Array(SPARKS), svx = new Float32Array(SPARKS), svy = new Float32Array(SPARKS), sl = new Float32Array(SPARKS), ss = new Float32Array(SPARKS); let sparkNext = 0;
+  const rings = []; const trail = [];
   // the hand
   const hand = { x: -1e4, y: -1e4, vx: 0, vy: 0, down: false, active: false, downX: 0, downY: 0, downAt: 0, moved: 0 };
   const lean = { x: 0, y: 0 }; // parallax offset, eased toward the finger
@@ -32,17 +35,19 @@
 
   // ---- field -------------------------------------------------------------------------------------
   function seed() {
-    N = Math.max(140, Math.min(420, Math.round((w * h) / 2600)));
+    N = Math.max(220, Math.min(720, Math.round((w * h) / 1500)));
     X = new Float32Array(N); Y = new Float32Array(N); Z = new Float32Array(N);
     VX = new Float32Array(N); VY = new Float32Array(N); HX = new Float32Array(N); HY = new Float32Array(N);
-    HEAT = new Float32Array(N); PH = new Float32Array(N); TW = new Float32Array(N); PX = new Float32Array(N); PY = new Float32Array(N);
+    HEAT = new Float32Array(N); PH = new Float32Array(N); TW = new Float32Array(N); PX = new Float32Array(N); PY = new Float32Array(N); LIMEY = new Float32Array(N);
     for (let i = 0; i < N; i += 1) {
       X[i] = PX[i] = Math.random() * w; Y[i] = PY[i] = Math.random() * h;
       Z[i] = 0.25 + Math.random() ** 2 * 0.75;              // most stars far and small
       const a = Math.random() * Math.PI * 2, sp = 2 + Z[i] * 6; // slow home drift, faster when near
       HX[i] = Math.cos(a) * sp; HY[i] = Math.sin(a) * sp;
       PH[i] = Math.random() * Math.PI * 2; TW[i] = 0.5 + Math.random() * 1.5;
+      LIMEY[i] = Math.random() < 0.34 ? 0.55 + Math.random() * 0.45 : 0; // a third of the sky is lime at rest
     }
+    sl.fill(0); rings.length = 0; trail.length = 0;
   }
 
   function resize() {
@@ -85,9 +90,23 @@
     }
     // the finger's velocity decays between events, so a still finger stops stirring
     hand.vx *= Math.max(0, 1 - dt * 8); hand.vy *= Math.max(0, 1 - dt * 8);
+    // sparks fly, slow and die
+    for (let i = 0; i < SPARKS; i += 1) {
+      if (sl[i] <= 0) continue;
+      sx[i] += svx[i] * dt; sy[i] += svy[i] * dt; svx[i] *= 1 - dt * 2.2; svy[i] *= 1 - dt * 2.2; sl[i] -= dt * 1.6;
+    }
+    for (let i = rings.length - 1; i >= 0; i -= 1) { const r = rings[i]; r.r += (420 - r.r * 0.6) * dt; r.life -= dt * 1.4; if (r.life <= 0) rings.splice(i, 1); }
+    const cut = t - 420; while (trail.length && trail[0].t < cut) trail.shift();
+  }
+
+  function spark(x, y, vx, vy, size) {
+    const i = sparkNext; sparkNext = (sparkNext + 1) % SPARKS;
+    sx[i] = x; sy[i] = y; svx[i] = vx; svy[i] = vy; sl[i] = 1; ss[i] = size;
   }
 
   function burst(x, y) {
+    rings.push({ x, y, r: 6, life: 1 });
+    for (let k = 0; k < 44; k += 1) { const a = Math.random() * Math.PI * 2, v = 160 + Math.random() * 420; spark(x, y, Math.cos(a) * v, Math.sin(a) * v, 1.5 + Math.random() * 2.5); }
     for (let i = 0; i < N; i += 1) {
       const dx = X[i] - x, dy = Y[i] - y, d2 = dx * dx + dy * dy;
       if (d2 < 190 * 190) {
@@ -115,9 +134,30 @@
         ctx.strokeStyle = heat > 0.15 ? LIME : "rgb(232 236 255)"; ctx.lineWidth = Math.max(1, size * 0.28); ctx.lineCap = "round";
         ctx.beginPath(); ctx.moveTo(PX[i] + ox - sx * 2.5, PY[i] + oy - sy * 2.5); ctx.lineTo(X[i] + ox, Y[i] + oy); ctx.stroke();
       }
-      ctx.globalAlpha = alpha * (1 - heat);
+      const lime = Math.max(heat, LIMEY[i]);
+      ctx.globalAlpha = alpha * (1 - lime);
       ctx.drawImage(sprites.white, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2);
-      if (heat > 0.02) { ctx.globalAlpha = alpha * heat; ctx.drawImage(sprites.lime, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2); }
+      if (lime > 0.02) { ctx.globalAlpha = alpha * lime; ctx.drawImage(sprites.lime, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2); }
+    }
+    // the comet trail behind the finger: a fading lime ribbon
+    if (trail.length > 1) {
+      ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = LIME;
+      for (let i = 1; i < trail.length; i += 1) {
+        const a = trail[i], b = trail[i - 1], age = (t - a.t) / 420;
+        ctx.globalAlpha = (1 - age) * 0.55; ctx.lineWidth = (1 - age) * 14 + 1;
+        ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(a.x, a.y); ctx.stroke();
+      }
+    }
+    for (let i = 0; i < SPARKS; i += 1) {
+      if (sl[i] <= 0) continue;
+      const size = ss[i] * (0.6 + sl[i]);
+      ctx.globalAlpha = sl[i];
+      ctx.drawImage(sprites.lime, sx[i] - size * 2, sy[i] - size * 2, size * 4, size * 4);
+    }
+    for (const r of rings) {
+      ctx.globalAlpha = r.life * 0.9; ctx.strokeStyle = LIME; ctx.lineWidth = 1.5 + r.life * 4;
+      ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = r.life * 0.25; ctx.lineWidth = 18; ctx.stroke();
     }
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
   }
@@ -131,10 +171,24 @@
 
   // ---- the hand ------------------------------------------------------------------------------------
   function at(ev) { const r = canvas.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
-  function onDown(ev) { const p = at(ev); hand.x = hand.downX = p.x; hand.y = hand.downY = p.y; hand.vx = hand.vy = 0; hand.moved = 0; hand.downAt = performance.now(); hand.down = true; hand.active = true; canvas.setPointerCapture?.(ev.pointerId); }
+  function onDown(ev) {
+    const p = at(ev); hand.x = hand.downX = p.x; hand.y = hand.downY = p.y; hand.vx = hand.vy = 0; hand.moved = 0; hand.downAt = performance.now(); hand.down = true; hand.active = true;
+    canvas.setPointerCapture?.(ev.pointerId);
+    rings.push({ x: p.x, y: p.y, r: 4, life: 0.6 }); // the finger lands: a small ring, at once
+    trail.length = 0; trail.push({ x: p.x, y: p.y, t: performance.now() });
+  }
   function onMove(ev) {
-    const p = at(ev);
-    if (hand.active) { hand.vx = hand.vx * 0.5 + (p.x - hand.x) * 30; hand.vy = hand.vy * 0.5 + (p.y - hand.y) * 30; hand.moved += Math.hypot(p.x - hand.x, p.y - hand.y); }
+    const p = at(ev), now = performance.now();
+    if (hand.active) {
+      const dx = p.x - hand.x, dy = p.y - hand.y, d = Math.hypot(dx, dy);
+      hand.vx = hand.vx * 0.5 + dx * 30; hand.vy = hand.vy * 0.5 + dy * 30; hand.moved += d;
+      if (hand.down || ev.pointerType === "mouse") {
+        trail.push({ x: p.x, y: p.y, t: now });
+        // sparks peel off the swipe, more the faster it goes
+        const n = Math.min(6, Math.round(d / 6));
+        for (let k = 0; k < n; k += 1) { const f = k / n; spark(hand.x + dx * f, hand.y + dy * f, -dx * 6 + (Math.random() - 0.5) * 160, -dy * 6 + (Math.random() - 0.5) * 160, 1 + Math.random() * 2); }
+      }
+    }
     hand.x = p.x; hand.y = p.y; hand.active = true;
   }
   function onUp(ev) {
@@ -142,7 +196,7 @@
     hand.down = false;
     if (ev.pointerType !== "mouse") hand.active = false; // a lifted finger is gone; a mouse stays
   }
-  function onLeave() { hand.active = false; hand.down = false; }
+  function onLeave() { hand.active = false; hand.down = false; trail.length = 0; }
   const listeners = [["pointerdown", onDown], ["pointermove", onMove], ["pointerup", onUp], ["pointercancel", onUp], ["pointerleave", onLeave]];
 
   window.Sky = {

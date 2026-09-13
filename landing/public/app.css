@@ -35,8 +35,14 @@ body:has(#signed-out:not([hidden])){overscroll-behavior:none}
 .intro{pointer-events:none!important;text-shadow:0 1px 12px var(--bg),0 0 2px var(--bg)}
 .intro h1{margin:0 0 8px;font-size:26px;line-height:1.2;font-weight:600;letter-spacing:-.01em}
 .intro p{margin:0;color:var(--muted);font-size:15px;line-height:1.45;max-width:36ch}
-.github{height:52px;padding:0 20px;border-radius:12px;background:var(--fg);color:var(--bg);font-weight:600;font-size:16px;display:flex;align-items:center;justify-content:center;gap:10px;width:100%}
-.github:active{background:oklch(0.88 0.005 260)}
+.intro em{font-style:normal;color:var(--lime)}
+.github{position:relative;height:52px;padding:0 20px;border-radius:12px;background:var(--fg);color:var(--bg);font-weight:600;font-size:16px;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;overflow:hidden;box-shadow:0 0 0 1.5px var(--lime),0 0 28px color-mix(in oklch,var(--lime) 35%,transparent);animation:glow 3.2s ease-in-out infinite}
+.github::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 30%,color-mix(in oklch,var(--lime) 55%,transparent) 50%,transparent 70%);transform:translateX(-120%);animation:sheen 3.2s ease-in-out infinite}
+.github svg{color:var(--bg)}
+.github:active{background:var(--lime)}
+@keyframes glow{50%{box-shadow:0 0 0 1.5px var(--lime),0 0 44px color-mix(in oklch,var(--lime) 55%,transparent)}}
+@keyframes sheen{0%,55%{transform:translateX(-120%)}85%,100%{transform:translateX(120%)}}
+@media (prefers-reduced-motion:reduce){.github,.github::after{animation:none}}
 #signed-out .error{color:var(--muted);text-align:center}
 
 /* tiles */
@@ -53,7 +59,8 @@ body:has(#signed-out:not([hidden])){overscroll-behavior:none}
 .dot.pending{background:var(--pending);box-shadow:0 0 12px var(--pending)}
 .dot.stopped{background:var(--stopped)}
 .dot.failed{background:var(--failed);box-shadow:0 0 12px var(--failed)}
-.tile .tag{font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--muted)}
+.tile .tag{display:flex;align-items:center;color:var(--muted)}
+.tile .tag svg,.tile .tag img{width:18px;height:18px;display:block}
 .tile .body{display:flex;flex-direction:column;gap:3px;min-width:0}
 .tile .name{font-size:16px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .repo{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -123,4 +130,4 @@ h2{font-size:18px;font-weight:600;margin:0 0 8px}
 .code{text-align:center;font-size:32px;letter-spacing:.15em;color:var(--fg)}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 
-#toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--tile-hi);color:var(--fg);padding:10px 16px;border-radius:10px;font-size:14px;box-shadow:0 8px 24px oklch(0 0 0 / 30%),inset 0 0 0 1px var(--edge-hi);z-index:10;max-width:calc(100vw - 32px)}
+#toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translateX(-50%);background:var(--tile-hi);color:var(--fg);padding:10px 16px;border-radius:10px;font-size:14px;box-shadow:0 8px 24px oklch(0 0 0 / 30%),inset 0 0 0 1px var(--edge-hi);z-index:10;max-width:calc(100vw - 32px)}
