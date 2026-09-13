@@ -2,146 +2,105 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>freeagent</title>
-<meta name="description" content="Run Claude Code, Codex and OpenCode on a box you own and drive them from your phone.">
+<meta name="description" content="Your coding agents on a box you own, from your phone.">
 <meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#1a1b22">
 <link rel="stylesheet" href="app.css?v=dev">
 </head>
 <body>
 <header class="topbar">
   <div class="brand">freeagent</div>
-  <div class="topbar-actions">
-    <button class="icon" id="new-box" title="New box" aria-label="New box" hidden>+</button>
-    <button class="icon" id="accounts-open" title="Accounts" aria-label="Accounts">⚙</button>
-  </div>
+  <button class="avatar" id="accounts-open" aria-label="Accounts" hidden><span id="avatar-initial"></span></button>
 </header>
 
 <main>
   <section id="signed-out" hidden>
-    <div class="empty">
-      <div class="mark">GitHub</div>
-      <h1>Sign in</h1>
-      <p>Your coding agents, on a box you own, from your phone. Claude Code, Codex and OpenCode on a machine in your own account.</p>
-      <p class="hint">GitHub is your account here. Connect Hugging Face or Railway afterwards to run boxes there.</p>
-      <button class="filled" id="signin-github">Sign in with GitHub</button>
+    <div class="hero">
+      <svg class="mark" width="56" height="56" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="20" stroke="currentColor" stroke-width="2"></circle><circle cx="28" cy="28" r="5" fill="currentColor"></circle><path d="M28 8V2M28 48v6" stroke="currentColor" stroke-width="2"></path></svg>
+      <div class="wordmark">freeagent</div>
+    </div>
+    <div class="foot">
+      <button class="filled" id="signin-github">Continue with GitHub</button>
+      <a href="#" class="quiet" id="github-device">Sign in with a code</a>
       <p class="error" id="signed-out-error"></p>
     </div>
   </section>
 
   <section id="boxes-view" hidden>
     <p class="error" id="list-error"></p>
-    <div id="skeleton" hidden><div class="card skeleton"></div><div class="card skeleton"></div><div class="card skeleton"></div></div>
-    <div id="cards"></div>
-    <div class="empty" id="empty" hidden>
-      <h1>No boxes yet</h1>
-      <p>A box is a machine in your own GitHub or Hugging Face account running Herdr, Collie and your coding agents.</p>
-      <button class="filled" id="new-box-empty">New box</button>
+    <div class="grid">
+      <div id="skeleton" class="contents" hidden><div class="tile skeleton"></div><div class="tile skeleton"></div><div class="tile skeleton"></div></div>
+      <div id="cards" class="contents"></div>
+      <button class="tile add" id="new-box" aria-label="New box"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M14 5v18M5 14h18" stroke="currentColor" stroke-width="2"></path></svg></button>
     </div>
   </section>
 </main>
 
-<!-- Create -->
-<dialog id="create">
+<!-- New box -->
+<dialog class="sheet" id="create">
   <form method="dialog" id="create-form">
-    <h2>Create a box</h2>
-
-    <label class="field">
-      <span>Create in</span>
-      <select id="create-provider"></select>
-    </label>
-
-    <div class="field" id="repo-field">
-      <span>Start from a repository</span>
-      <button type="button" class="picker" id="repo-picker"><span id="repo-picker-value">Empty box</span><span class="chev">🔍</span></button>
-      <p class="hint" id="repo-hint" hidden></p>
-    </div>
-
-    <details id="advanced">
-      <summary>Advanced</summary>
-      <label class="field">
-        <span>Name</span>
-        <input id="create-name" autocomplete="off" spellcheck="false" maxlength="63" pattern="^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$">
-        <p class="hint" id="name-hint">Letters, numbers and hyphens</p>
-      </label>
-      <label class="field" id="machine-field">
-        <span>Machine</span>
-        <select id="create-machine">
-          <option value="basicLinux32gb">2 cores · 8 GB (free plan: 120 core-hours/month)</option>
-          <option value="standardLinux32gb">4 cores · 16 GB</option>
-        </select>
-      </label>
-      <label class="field" id="visibility-field" hidden>
-        <span>Space visibility</span>
-        <select id="create-visibility">
-          <option value="public">Public (your GitHub sign-in is the door)</option>
-          <option value="private">Private</option>
-        </select>
-      </label>
-    </details>
-
+    <div class="handle"></div>
+    <h2>New box</h2>
+    <div class="seg" id="create-provider" role="radiogroup"></div>
+    <button type="button" class="row" id="repo-picker"><span>Repository</span><span class="val"><span id="repo-picker-value">None</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5"></path></svg></span></button>
+    <label class="row"><span>Name</span><input id="create-name" autocomplete="off" spellcheck="false" maxlength="63" pattern="^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$"></label>
+    <label class="row" id="machine-field"><span>Machine</span><select id="create-machine"><option value="basicLinux32gb">2 cores · 8 GB</option><option value="standardLinux32gb">4 cores · 16 GB</option></select></label>
+    <label class="row" id="visibility-field" hidden><span>Visibility</span><select id="create-visibility"><option value="public">Public</option><option value="private">Private</option></select></label>
     <p class="error" id="create-error"></p>
-    <div class="actions">
-      <button type="button" class="text" id="create-cancel">Cancel</button>
-      <button type="submit" class="filled" id="create-submit">Create</button>
-    </div>
+    <div class="actions"><button type="button" class="text" id="create-cancel">Cancel</button><button type="submit" class="filled" id="create-submit">Create</button></div>
   </form>
-
-  <!-- Repository search replaces the form in place, like the app -->
   <div id="repo-search" hidden>
-    <h2>Start from a repository</h2>
-    <input id="repo-query" placeholder="Type to filter" autocomplete="off" spellcheck="false">
+    <div class="handle"></div>
+    <input id="repo-query" placeholder="Search repositories" autocomplete="off" spellcheck="false">
     <div class="list" id="repo-list"></div>
-    <div class="actions"><button type="button" class="text" id="repo-cancel">Cancel</button></div>
+    <div class="actions"><button type="button" class="text" id="repo-cancel">Back</button></div>
   </div>
 </dialog>
 
-<!-- Accounts: GitHub is the account; the others are connected to it, like the crux-android Accounts screen -->
-<dialog id="accounts">
+<!-- Accounts -->
+<dialog class="sheet" id="accounts">
+  <div class="handle"></div>
   <h2>Accounts</h2>
-  <div class="row" id="acct-github" hidden>
-    <div><strong>GitHub</strong><div class="sub" id="acct-github-sub"></div></div>
-    <div class="slot"><button class="outlined small" id="acct-github-connect" hidden>Connect</button></div>
-  </div>
-  <div class="row" id="acct-hf" hidden>
-    <div><strong>Hugging Face</strong><div class="sub" id="acct-hf-sub"></div></div>
-    <div class="slot"><button class="outlined small" id="acct-hf-connect" hidden>Connect</button><button class="text small" id="acct-hf-disconnect" hidden>Disconnect</button></div>
-  </div>
-  <div class="row" id="acct-railway" hidden>
-    <div><strong>Railway</strong><div class="sub" id="acct-railway-sub"></div></div>
-    <div class="slot"><button class="outlined small" id="acct-railway-connect" hidden>Connect</button><button class="text small" id="acct-railway-disconnect" hidden>Disconnect</button></div>
-  </div>
-  <p class="hint">Your GitHub account signs you in and opens your boxes on every device. Connected accounts are where boxes can also run.</p>
-  <details class="sub" id="github-details" hidden><summary>GitHub sign-in details</summary>
-    <p id="github-details-text"></p>
-    <p>If GitHub refuses the redirect, check the OAuth App's callback URL is exactly the one above, or <a href="#" id="github-device">sign in with a code instead</a>.</p>
-  </details>
-  <hr>
-  <div class="actions"><button class="text" id="signout" hidden>Sign out</button><button class="text" id="accounts-close">Close</button></div>
+  <div class="acct" id="acct-github" hidden><div><div class="name" id="acct-github-sub"></div><div class="sub">GitHub</div></div><div class="slot"><button class="outlined" id="acct-github-connect" hidden>Connect</button><button class="text" id="signout" hidden>Sign out</button></div></div>
+  <div class="acct" id="acct-hf" hidden><div><div class="name">Hugging Face</div><div class="sub" id="acct-hf-sub"></div></div><div class="slot"><button class="outlined" id="acct-hf-connect" hidden>Connect</button><button class="text" id="acct-hf-disconnect" hidden>Disconnect</button></div></div>
+  <div class="acct" id="acct-railway" hidden><div><div class="name">Railway</div><div class="sub" id="acct-railway-sub"></div></div><div class="slot"><button class="outlined" id="acct-railway-connect" hidden>Connect</button><button class="text" id="acct-railway-disconnect" hidden>Disconnect</button></div></div>
+  <div class="actions"><button class="text" id="accounts-close">Close</button></div>
+</dialog>
+
+<!-- Box actions -->
+<dialog class="sheet" id="box-menu">
+  <div class="handle"></div>
+  <h2 id="box-menu-title"></h2>
+  <div id="box-menu-items"></div>
+  <div class="actions"><button class="text" id="box-menu-close">Close</button></div>
 </dialog>
 
 <!-- Delete -->
-<dialog id="confirm">
+<dialog class="sheet" id="confirm">
+  <div class="handle"></div>
   <h2>Delete this box?</h2>
   <p id="confirm-text"></p>
   <div class="actions"><button class="text" id="confirm-cancel">Cancel</button><button class="filled danger" id="confirm-ok">Delete</button></div>
 </dialog>
 
-<!-- Railway: an account token, pasted (Railway's OAuth needs a client secret a static page cannot hold) -->
-<dialog id="railway">
+<!-- Railway token -->
+<dialog class="sheet" id="railway">
   <form method="dialog" id="railway-form">
+    <div class="handle"></div>
     <h2>Connect Railway</h2>
-    <p>Create an account token at <a href="https://railway.com/account/tokens" target="_blank" rel="noopener">railway.com/account/tokens</a> and paste it here. It stays in this browser.</p>
-    <label class="field"><span>Account token</span><input id="railway-token" autocomplete="off" spellcheck="false" required></label>
+    <a class="quiet left" href="https://railway.com/account/tokens" target="_blank" rel="noopener">railway.com/account/tokens</a>
+    <label class="row"><span>Token</span><input id="railway-token" autocomplete="off" spellcheck="false" required></label>
     <p class="error" id="railway-error"></p>
     <div class="actions"><button type="button" class="text" id="railway-cancel">Cancel</button><button type="submit" class="filled" id="railway-submit">Connect</button></div>
   </form>
 </dialog>
 
-<!-- Device-code fallback -->
-<dialog id="device">
-  <h2>Sign in to GitHub</h2>
-  <p>Enter this code on GitHub, then come back here.</p>
+<!-- Device code -->
+<dialog class="sheet" id="device">
+  <div class="handle"></div>
+  <h2>Enter this code on GitHub</h2>
   <p class="code"><code id="device-code"></code></p>
   <a id="device-link" class="filled btn" href="https://github.com/login/device" target="_blank" rel="noopener">Open github.com/login/device</a>
   <div class="actions"><button class="text" id="device-cancel">Cancel</button></div>

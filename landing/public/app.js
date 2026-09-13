@@ -166,48 +166,44 @@ async function loadBoxes() {
 }
 
 function renderCards() {
-  const root = $("cards"); root.textContent = ""; closeMenu();
-  $("empty").hidden = boxes.length > 0;
+  const root = $("cards"); root.textContent = "";
   for (const b of boxes) {
     const el = document.createElement("div");
-    el.className = "card" + (b.kind === "running" || b.kind === "stopped" ? "" : " static");
-    el.setAttribute("role", "button"); el.tabIndex = 0;
+    const pressable = b.kind === "running" || b.kind === "stopped";
+    el.className = "tile" + (pressable ? " pressable" : "");
+    el.setAttribute("role", "button"); el.tabIndex = 0; el.setAttribute("aria-label", b.name);
     const note = busy[b.id];
     el.innerHTML = `
-      <div class="glyph">${b.p === "github" ? "GH" : "HF"}</div>
-      <div>
-        <div class="name"></div>
-        <div class="status"><span class="dot ${b.kind}"></span><span class="status-text"></span></div>
-        <div class="repo" hidden></div>
-        <div class="err" hidden></div>
-        <div class="bar" hidden></div>
-      </div>
-      <div class="trail"></div>`;
+      <div class="top"><span class="dot ${b.kind}"></span><span class="tag">${b.p === "github" ? "GH" : "HF"}</span></div>
+      <div class="body"><div class="name"></div><div class="repo" hidden></div><div class="status ${note ? "pending" : b.kind}"></div></div>
+      <div class="bar" hidden></div>`;
     el.querySelector(".name").textContent = b.name;
-    el.querySelector(".status-text").textContent = note ?? b.label;
+    el.querySelector(".status").textContent = note ?? b.label;
     if (b.repo) { const r = el.querySelector(".repo"); r.textContent = b.repo; r.hidden = false; }
     el.querySelector(".bar").hidden = !(b.kind === "pending" || note);
-    const trail = el.querySelector(".trail");
-    if (note) trail.innerHTML = '<div class="spinner"></div>';
-    else { const more = document.createElement("button"); more.className = "more"; more.textContent = "⋮"; more.setAttribute("aria-label", "More actions"); more.onclick = (ev) => { ev.stopPropagation(); showMenu(el, b); }; trail.appendChild(more); }
-    const go = () => { if (!busy[b.id] && (b.kind === "running" || b.kind === "stopped")) connect(b).catch((e) => { setBusy(b.id, null); showError(e.message); }); };
+    if (!note) {
+      const more = document.createElement("button"); more.className = "more"; more.setAttribute("aria-label", `Actions for ${b.name}`);
+      more.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4" cy="10" r="1.6"></circle><circle cx="10" cy="10" r="1.6"></circle><circle cx="16" cy="10" r="1.6"></circle></svg>';
+      more.onclick = (ev) => { ev.stopPropagation(); openBoxMenu(b); };
+      el.appendChild(more);
+    }
+    const go = () => { if (!busy[b.id] && pressable) connect(b).catch((e) => { setBusy(b.id, null); showError(e.message); }); };
     el.onclick = go;
     el.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } };
     root.appendChild(el);
   }
 }
 
-function showMenu(card, b) {
-  closeMenu();
-  const m = document.createElement("div"); m.className = "menu"; m.setAttribute("role", "menu");
-  const add = (text, fn, cls = "") => { const btn = document.createElement("button"); btn.textContent = text; btn.className = cls; btn.setAttribute("role", "menuitem"); btn.onclick = (ev) => { ev.stopPropagation(); closeMenu(); fn(); }; m.appendChild(btn); };
+// Box actions live in a bottom sheet, like everything else that used to be a dialog or a popover.
+function openBoxMenu(b) {
+  $("box-menu-title").textContent = b.name;
+  const items = $("box-menu-items"); items.textContent = "";
+  const add = (text, fn, cls = "") => { const btn = document.createElement("button"); btn.textContent = text; btn.className = cls; btn.onclick = () => { $("box-menu").close(); fn(); }; items.appendChild(btn); };
   add("Copy address", () => navigator.clipboard?.writeText(b.url).then(() => toast("Address copied")));
   if (b.p === "hf" && b.token) add("Copy Collie token", () => navigator.clipboard?.writeText(b.token).then(() => toast("Token copied")));
   add("Delete", () => confirmDelete(b), "danger");
-  card.appendChild(m); openMenu = m;
+  $("box-menu").showModal();
 }
-function closeMenu() { openMenu?.remove(); openMenu = null; }
-document.addEventListener("click", closeMenu);
 
 function setBusy(id, note) { if (note === null) delete busy[id]; else busy[id] = note; renderCards(); }
 function showError(text) { $("list-error").textContent = text; }
@@ -306,34 +302,35 @@ function nameFor(repo) {
   return base;
 }
 
+let createProvider = "github";
+
 function openCreate() {
-  const sel = $("create-provider"); sel.textContent = "";
-  for (const p of ["github", "hf"]) {
-    if (!config[p]) continue;
-    const o = document.createElement("option"); o.value = p;
-    o.textContent = user[p] ? `${LABEL[p]} — ${user[p]}` : `${LABEL[p]} — not connected`;
-    sel.appendChild(o);
-  }
-  sel.value = user.github ? "github" : user.hf ? "hf" : sel.options[0]?.value;
+  createProvider = user[createProvider] ? createProvider : "github";
   pickedRepo = null; nameSuggested = true;
-  $("repo-picker-value").textContent = "Empty box";
+  $("repo-picker-value").textContent = "None";
   $("create-name").value = randomName();
   $("create-error").textContent = "";
-  $("advanced").open = false;
+  renderProviderSeg();
   onProviderChange();
   $("create").showModal();
-  if (user.github && repos === null) loadRepos().catch(() => {});
+  if (repos === null) loadRepos().catch(() => {});
+}
+
+// Only connected accounts are offered; connecting one is the Accounts sheet's job.
+function renderProviderSeg() {
+  const seg = $("create-provider"); seg.textContent = "";
+  for (const p of ["github", "hf"]) {
+    if (!config[p] || !user[p]) continue;
+    const b = document.createElement("button"); b.type = "button"; b.textContent = LABEL[p];
+    b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(p === createProvider));
+    b.onclick = () => { createProvider = p; renderProviderSeg(); onProviderChange(); };
+    seg.appendChild(b);
+  }
 }
 
 function onProviderChange() {
-  const p = $("create-provider").value;
-  $("machine-field").hidden = p !== "github";
-  $("visibility-field").hidden = p !== "hf";
-  const hint = $("repo-hint");
-  hint.hidden = Boolean(user.github);
-  hint.textContent = user.github ? "" : "Connect GitHub to start from a repository.";
-  $("create-submit").disabled = !user[p];
-  if (!user[p] && p) { $("create").close(); signIn(p, "create"); }
+  $("machine-field").hidden = createProvider !== "github";
+  $("visibility-field").hidden = createProvider !== "hf";
 }
 
 async function loadRepos() {
@@ -355,7 +352,7 @@ function closeRepoSearch() { $("repo-search").hidden = true; $("create-form").hi
 function renderRepoList(q) {
   const list = $("repo-list"); list.textContent = "";
   const add = (text, priv, fn) => { const b = document.createElement("button"); b.type = "button"; b.innerHTML = `<span></span>${priv ? '<span class="lock" aria-label="Private">🔒</span>' : ""}`; b.querySelector("span").textContent = text; b.onclick = fn; list.appendChild(b); };
-  if (q.trim() === "") add("Empty box", false, () => pickRepo(null));
+  if (q.trim() === "") add("None", false, () => pickRepo(null));
   if (repos === null) { const p = document.createElement("div"); p.className = "none"; p.textContent = "Loading repositories…"; list.appendChild(p); return; }
   const hits = repos.filter((r) => r.full.toLowerCase().includes(q.trim().toLowerCase()));
   for (const r of hits.slice(0, 200)) add(r.full, r.priv, () => pickRepo(r.full));
@@ -363,14 +360,14 @@ function renderRepoList(q) {
 }
 function pickRepo(full) {
   pickedRepo = full;
-  $("repo-picker-value").textContent = full ?? "Empty box";
+  $("repo-picker-value").textContent = full ?? "None";
   if (nameSuggested) $("create-name").value = full ? nameFor(full) : randomName();
   closeRepoSearch();
 }
 
 async function submitCreate(ev) {
   ev.preventDefault();
-  const p = $("create-provider").value;
+  const p = createProvider;
   const name = $("create-name").value.trim();
   if (!NAME_RE.test(name)) { $("create-error").textContent = "Use only letters, numbers and hyphens"; return; }
   $("create-submit").disabled = true; $("create-error").textContent = "";
@@ -435,8 +432,8 @@ function renderAccounts() {
     btn.title = has > 0 ? `Delete this account's ${has === 1 ? "box" : "boxes"} first` : "";
   }
   $("signout").hidden = !user.github;
-  $("github-details").hidden = !config.github || Boolean(user.github);
-  if (config.github) $("github-details-text").textContent = `client id ${config.github.client_id.slice(0, 8)}… · callback ${config.github.redirect_uri}`;
+  $("accounts-open").hidden = !user.github;
+  $("avatar-initial").textContent = (user.github ?? "?").slice(0, 1);
 }
 
 // ---- Page -----------------------------------------------------------------------------------------------------------
@@ -460,7 +457,7 @@ async function render() {
   $("boxes-view").hidden = !signedIn;
   $("new-box").hidden = !signedIn;
   if (!signedIn) { clearTimeout(pollTimer); return; }
-  if (boxes.length === 0) $("skeleton").hidden = false;
+  if (boxes.length === 0 && !$("cards").hasChildNodes()) $("skeleton").hidden = false;
   await refresh();
   $("skeleton").hidden = true;
 }
@@ -470,9 +467,8 @@ async function main() {
   if (!config.github) { $("signed-out").hidden = false; $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
 
   $("signin-github").onclick = () => signIn("github");
-  $("new-box").onclick = openCreate; $("new-box-empty").onclick = openCreate;
-  $("create-provider").onchange = onProviderChange;
-  $("repo-picker").onclick = () => { if (user.github) openRepoSearch(); else { $("create").close(); signIn("github", "create"); } };
+  $("new-box").onclick = openCreate;
+  $("repo-picker").onclick = openRepoSearch;
   $("repo-cancel").onclick = closeRepoSearch;
   $("repo-query").oninput = (ev) => renderRepoList(ev.target.value);
   $("create-name").oninput = () => { nameSuggested = false; };
@@ -497,7 +493,8 @@ async function main() {
     $("railway-submit").disabled = false;
   };
   $("signout").onclick = () => { for (const p of PROVIDERS) dropToken(p); toast("Signed out"); $("accounts").close(); render(); };
-  $("github-device").onclick = (ev) => { ev.preventDefault(); $("accounts").close(); signInWithCode().catch((e) => toast(e.message)); };
+  $("github-device").onclick = (ev) => { ev.preventDefault(); signInWithCode().catch((e) => { $("signed-out-error").textContent = e.message; }); };
+  $("box-menu-close").onclick = () => $("box-menu").close();
   $("device-cancel").onclick = () => $("device").close();
   $("confirm-cancel").onclick = () => $("confirm").close();
   document.addEventListener("visibilitychange", () => { if (!document.hidden && user[MAIN]) refresh(); });
