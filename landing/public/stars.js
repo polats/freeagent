@@ -144,15 +144,7 @@
       ctx.drawImage(sprites.white, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2);
       if (lime > 0.02) { ctx.globalAlpha = alpha * lime; ctx.drawImage(sprites.lime, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2); }
     }
-    // the comet trail behind the finger: a fading lime ribbon
-    if (trail.length > 1) {
-      ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = LIME;
-      for (let i = 1; i < trail.length; i += 1) {
-        const a = trail[i], b = trail[i - 1], age = (t - a.t) / 420;
-        ctx.globalAlpha = (1 - age) * 0.55; ctx.lineWidth = (1 - age) * 14 + 1;
-        ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(a.x, a.y); ctx.stroke();
-      }
-    }
+    // the ribbon behind the finger is drawn by trails.js (OGL polylines on the canvas above this one)
     for (let i = 0; i < SPARKS; i += 1) {
       if (sl[i] <= 0) continue;
       const size = ss[i] * (0.6 + sl[i]);

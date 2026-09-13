@@ -36,6 +36,7 @@ main{max-width:720px;margin:0 auto;padding:8px 20px calc(24px + env(safe-area-in
 body:has(#signed-out:not([hidden])){overscroll-behavior:none}
 #signed-out{position:fixed;inset:0;z-index:1;color:var(--fg);overflow:hidden}
 #stars{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+#trails{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 #signed-out .signin{position:absolute;left:20px;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:16px;pointer-events:none}
 #signed-out .signin>*{pointer-events:auto}
 .intro{pointer-events:none!important;text-shadow:0 1px 12px var(--bg),0 0 2px var(--bg)}

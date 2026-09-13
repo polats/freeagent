@@ -62,6 +62,10 @@ const dropTombstone = (id) => { const m = tombstones(); delete m[id]; LS.set("fr
 const pollFast = () => { fastUntil = Date.now() + 12000; };
 let openMenu = null;
 
+// The OGL ribbons behind the finger (trails.js) load as a module, so they may not be ready when the
+// sign-in screen first shows; leave the canvas for the module to pick up in that case.
+function startTrails() { if (window.Trails) window.Trails.start($("trails")); else window.__trailsPending = $("trails"); }
+
 // ---- Toast -------------------------------------------------------------------------------------------
 let toastTimer;
 function toast(text) {
@@ -573,8 +577,8 @@ async function render() {
   $("signed-out").hidden = signedIn;
   $("boxes-view").hidden = !signedIn;
   $("new-box").hidden = !signedIn;
-  if (!signedIn) { clearTimeout(pollTimer); window.Sky?.start($("stars")); return; }
-  window.Sky?.stop();
+  if (!signedIn) { clearTimeout(pollTimer); window.Sky?.start($("stars")); startTrails(); return; }
+  window.Sky?.stop(); window.Trails?.stop();
   if (boxes.length === 0 && !$("cards").hasChildNodes()) $("skeleton").hidden = false;
   await refresh();
   $("skeleton").hidden = true;
@@ -582,7 +586,7 @@ async function render() {
 
 async function main() {
   await Promise.all(PROVIDERS.map(detect));
-  if (!config.github) { $("signed-out").hidden = false; window.Sky?.start($("stars")); $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
+  if (!config.github) { $("signed-out").hidden = false; window.Sky?.start($("stars")); startTrails(); $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
 
   $("signin-github").onclick = () => signIn("github");
   $("new-box").onclick = openCreate;
