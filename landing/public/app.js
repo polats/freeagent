@@ -193,9 +193,30 @@ document.addEventListener("click", closeMenu);
 function setBusy(id, note) { if (note === null) delete busy[id]; else busy[id] = note; renderCards(); }
 function showError(text) { $("list-error").textContent = text; }
 
-// Tap a card: wake it if it is stopped, then open it. An HF box gets its Collie token in the
-// fragment on every open — the PWA ignores it once the phone is paired.
+// Tap a card: wake it if it is stopped, then open it in a NEW tab, so this page — the list of
+// boxes, with each HF box's Collie token — stays put. The tab is opened synchronously, inside the
+// tap, because a popup blocker only trusts window.open while the user gesture is live and waking a
+// codespace takes a minute of awaits first; it is pointed at the box once the box is ready. A
+// blocker that refuses even that (window.open answers null) falls back to navigating this tab.
+// An HF box gets its Collie token in the fragment on every open — the PWA ignores it while its
+// device token is still good, and re-pairs with it when the box has forgotten the phone.
 async function connect(b) {
+  const tab = window.open("about:blank", "_blank");
+  if (tab) tab.opener = null;
+  const open = (url) => { if (tab && !tab.closed) tab.location.replace(url); else location.assign(url); };
+  try {
+    await wake(b);
+  } catch (e) {
+    tab?.close(); // a wake that failed leaves no orphan tab behind
+    throw e;
+  }
+  setBusy(b.id, null);
+  open(handoffUrl(b));
+}
+
+// Start a stopped codespace and wait until Herdr and Collie are up on it. An HF box wakes itself
+// on the first request, so there is nothing to do for one.
+async function wake(b) {
   if (b.p === "github" && b.kind !== "running") {
     setBusy(b.id, "Starting the codespace…");
     await api("github", `/user/codespaces/${b.id}/start`, { method: "POST" }).catch((e) => { if (e.status !== 409) throw e; });
@@ -208,8 +229,6 @@ async function connect(b) {
     }
     for (let i = 20; i > 0; i -= 1) { setBusy(b.id, `Starting Herdr and Collie… ${i}s`); await sleep(1000); }
   }
-  setBusy(b.id, null);
-  location.assign(handoffUrl(b));
 }
 
 // What the box needs on first open, in the URL fragment (never sent to the server, stripped by the
