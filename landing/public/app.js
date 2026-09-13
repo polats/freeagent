@@ -17,6 +17,9 @@ const CFG = window.FREEAGENT;
 const MAIN = "github";
 const PROVIDERS = ["github", "hf"]; // fixed order, like the app's Accounts screen
 const LINKED = PROVIDERS.filter((p) => p !== MAIN); // the accounts that ride with the GitHub one
+// The sign-in stars (stars.js, from cosmiclabs.org): lime for the bright pixels, a faint gray for the
+// dark ones so the stars keep their shape on the dark ground. A finger reaches wider than a cursor.
+const STAR_COLORS = { bright: "#baff00", dim: "oklch(0.32 0.01 260)", touchRadius: 90 };
 const API = { github: "https://api.github.com", hf: "https://huggingface.co" };
 const LABEL = { github: "GitHub", hf: "Hugging Face", railway: "Railway" };
 const SCOPE = { github: "codespace repo", hf: "openid profile manage-repos" };
@@ -508,10 +511,9 @@ async function render() {
   renderAccounts();
   const signedIn = Boolean(user[MAIN]);
   $("signed-out").hidden = signedIn;
-  $("topbar").hidden = !signedIn; // the sign-in screen says "freeagent" once, in the star field
   $("boxes-view").hidden = !signedIn;
   $("new-box").hidden = !signedIn;
-  if (!signedIn) { clearTimeout(pollTimer); window.CosmicStars?.start("#stars"); return; }
+  if (!signedIn) { clearTimeout(pollTimer); window.CosmicStars?.start("#stars", STAR_COLORS); return; }
   window.CosmicStars?.stop();
   if (boxes.length === 0 && !$("cards").hasChildNodes()) $("skeleton").hidden = false;
   await refresh();
@@ -520,7 +522,7 @@ async function render() {
 
 async function main() {
   await Promise.all(PROVIDERS.map(detect));
-  if (!config.github) { $("signed-out").hidden = false; window.CosmicStars?.start("#stars"); $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
+  if (!config.github) { $("signed-out").hidden = false; window.CosmicStars?.start("#stars", STAR_COLORS); $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
 
   $("signin-github").onclick = () => signIn("github");
   $("new-box").onclick = openCreate;

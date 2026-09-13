@@ -1,7 +1,9 @@
 // The star effect from cosmiclabs.org (index.html, inline script), reused as is: the silver stars
 // image (images/allstars.png) is dithered with a 4×4 Bayer matrix into 2px particles — lime for the
-// bright pixels, the ground gray for the dark ones — that float idly and scatter from the pointer,
-// then drift home. Lines marked FREEAGENT are the only additions (touch input, stop, manual start).
+// bright pixels — that float idly and scatter from the pointer, then drift home. Lines marked
+// FREEAGENT are the only additions: touch input with a wider reach, particle colours as options (the
+// site draws on its gray page, freeagent on the app's dark ground), the image repeated down a
+// portrait screen so a phone is covered, stop(), and a manual start.
 // Main script
 class Particle {
     constructor(x, y, isWhite, bayerX, bayerY) {
@@ -133,7 +135,8 @@ class Particle {
     }
 
     draw(ctx) {
-        ctx.fillStyle = this.isWhite ? "#baff00" : "#d9d6d6";
+        // FREEAGENT: colours come from the effect (lime on the app's dark ground) instead of the site's gray page
+        ctx.fillStyle = this.isWhite ? this.colors.bright : this.colors.dim;
         const offset = (this.currentSize - this.baseSize) / 2;
         
         // Apply idle floating offset when not dispersed
@@ -154,7 +157,10 @@ class Particle {
 }
 
 class DitheredPixelEffect {
-    constructor(containerSelector) {
+    constructor(containerSelector, options = {}) {
+        // FREEAGENT: the two particle colours, and how far a touch reaches (a finger is wider than a cursor)
+        this.colors = { bright: options.bright ?? "#baff00", dim: options.dim ?? "#d9d6d6" };
+        this.touchRadius = options.touchRadius ?? 90;
         // Create container if it doesn't exist
         let container = document.querySelector(containerSelector);
         if (!container) {
@@ -182,6 +188,7 @@ class DitheredPixelEffect {
         // Particle system setup
         this.particles = [];
         this.dispersionRadius = 50;
+        this.mouseRadius = 50;
         this.mousePos = { x: -1000, y: -1000 };
 
         // Add canvas to container
@@ -223,20 +230,22 @@ class DitheredPixelEffect {
                     (rect.height * 1) / image.height,
                 );
 
-                this.tempCanvas.width = image.width * scale;
-                this.tempCanvas.height = image.height * scale;
+                // FREEAGENT: repeat the fitted image down the screen so a portrait phone is covered,
+                // not banded; every other row is mirrored so the repeat does not read as a pattern.
+                const tileW = Math.round(image.width * scale);
+                const tileH = Math.round(image.height * scale);
+                const rows = Math.max(1, Math.ceil(rect.height / tileH));
+                this.tempCanvas.width = tileW;
+                this.tempCanvas.height = tileH * rows;
+                for (let r = 0; r < rows; r += 1) {
+                    this.tempCtx.save();
+                    if (r % 2 === 1) { this.tempCtx.translate(tileW, 0); this.tempCtx.scale(-1, 1); }
+                    this.tempCtx.drawImage(image, 0, r * tileH, tileW, tileH);
+                    this.tempCtx.restore();
+                }
 
                 const x = (rect.width - this.tempCanvas.width) / 2;
-                const y =
-                    (rect.height - this.tempCanvas.height) / 2;
-
-                this.tempCtx.drawImage(
-                    image,
-                    0,
-                    0,
-                    this.tempCanvas.width,
-                    this.tempCanvas.height,
-                );
+                const y = (rect.height - this.tempCanvas.height) / 2;
                 this.convertToParticles(x, y);
                 resolve();
             };
@@ -304,6 +313,7 @@ class DitheredPixelEffect {
                                 bayerY,
                             );
                             particle.canvas = this.canvas;
+                            particle.colors = this.colors;
                             this.particles.push(particle);
                         }
                     }
@@ -313,6 +323,7 @@ class DitheredPixelEffect {
     }
 
     onMouseMove(event) {
+        this.dispersionRadius = this.mouseRadius;
         const rect = this.container.getBoundingClientRect();
         this.mousePos.x = event.clientX - rect.left;
         this.mousePos.y = event.clientY - rect.top;
@@ -325,6 +336,7 @@ class DitheredPixelEffect {
         const rect = this.container.getBoundingClientRect();
         this.mousePos.x = touch.clientX - rect.left;
         this.mousePos.y = touch.clientY - rect.top;
+        this.dispersionRadius = this.touchRadius;
     }
 
     onMouseLeave() {
@@ -365,9 +377,9 @@ class DitheredPixelEffect {
 // FREEAGENT: started by app.js when the sign-in screen is shown (the site starts it on DOMContentLoaded)
 window.CosmicStars = {
     effect: null,
-    async start(selector) {
+    async start(selector, options) {
         if (this.effect) return;
-        this.effect = new DitheredPixelEffect(selector);
+        this.effect = new DitheredPixelEffect(selector, options);
         try {
             await this.effect.loadImage("images/allstars.png");
         } catch (error) {

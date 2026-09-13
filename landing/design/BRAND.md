@@ -52,11 +52,17 @@ otherwise. Particles float idly (4–8px sine), scatter within 50px of the point
 velocity mixed in, bounce off the edges, and drift home at `returnSpeed 0.05`. freeagent added only
 touch input, a `stop()`, and a manual `start()`; see the `FREEAGENT` markers.
 
-## What freeagent takes and what it does not
+## What freeagent takes and what it does not (Paul, 2026-09-13)
 
-- Sign-in screen: full brand — gray ground with `bg_website.png`, the dither stars, "FREEAGENT" in
-  PP Neue Bit top-right, "CONTINUE WITH GITHUB" as a `.link` bottom-left, errors in Monument Grotesk.
-- Favicons: the Cosmic Labs star icons.
-- **No Cosmic Labs lockup and no link to cosmiclabs.org on freeagent pages** (Paul, 2026-09-13).
-- App after sign-in: keeps the Bento layout; light scheme takes the brand ground, ink and lime;
-  dark scheme keeps the cool dark tiles with lime for Running.
+- **Colour:** lime `#baff00` is the accent everywhere — primary buttons (lime on black), the avatar,
+  the New box tile, Running, the active segment, the text caret. The ground is the app's own dark
+  `oklch(0.17 0.012 260)`, not the site's gray: the sign-in screen and the signed-in screen share it.
+- **Type:** IBM Plex Sans throughout, the face the app already uses. The pixel face (PP Neue Bit)
+  and Monument Grotesk are **not** used on freeagent.
+- **Header:** the sign-in screen uses the same top bar as the app ("freeagent" top-left), so the
+  wordmark appears once and looks the same before and after sign-in.
+- **Stars:** the site's `DitheredPixelEffect`, reused whole, drawn in lime on the dark ground with a
+  faint gray for the dark pixels. On a phone the stars image is repeated down the screen so the
+  whole surface answers a finger; touch reach is 90px against the cursor's 50px.
+- **Not used:** `bg_website.png`, the lockup, any link to cosmiclabs.org. Favicons are the Cosmic
+  Labs star icons.
