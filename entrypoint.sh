@@ -84,6 +84,18 @@ else
 fi
 export COLLIE_AUTH_TOKEN="${COLLIE_AUTH_TOKEN:-}"
 
+# Pairing by GitHub identity. The landing page sets FREEAGENT_GITHUB_OWNER to the GitHub login that
+# created the box; Collie then enrols any device that proves it holds that account's GitHub sign-in
+# (POST /api/pair/github, verified against api.github.com and never stored). This is how a second
+# phone gets in without the root token: sign in to the landing page with GitHub and open the box.
+# Collie's own COLLIE_GITHUB_OWNER is honoured too, for a box configured by hand.
+export COLLIE_GITHUB_OWNER="${FREEAGENT_GITHUB_OWNER:-${COLLIE_GITHUB_OWNER:-}}"
+if [ -n "$COLLIE_GITHUB_OWNER" ]; then
+  log "auth: GitHub owner is $COLLIE_GITHUB_OWNER — devices signed in to that GitHub account pair themselves"
+else
+  log "auth: no FREEAGENT_GITHUB_OWNER — pairing needs the token (or a code); set it to your GitHub login to pair by sign-in"
+fi
+
 # --- persistence -------------------------------------------------------------------------
 # Herdr keeps config and session state under the XDG dirs; Collie keeps pairing, uploads, audit
 # and the journal under COLLIE_STATE_DIR and its operator TOML files under HERDR_PLUGIN_CONFIG_DIR.
@@ -248,7 +260,7 @@ export COLLIE_TRUSTED_USER_OPTIONAL=1
 {
   for v in HERDR_SOCKET_PATH XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME XDG_CACHE_HOME \
            COLLIE_STATE_DIR HERDR_PLUGIN_CONFIG_DIR COLLIE_MUX COLLIE_HOST COLLIE_PORT \
-           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST COLLIE_AUTH_TOKEN COLLIE_CHECKOUT_COMMAND COLLIE_CHECKOUT_CWD COLLIE_CHECKOUT_TOKEN_FILE FREEAGENT_WORKSPACE FREEAGENT_STATE_ROOT; do
+           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST COLLIE_AUTH_TOKEN COLLIE_GITHUB_OWNER COLLIE_CHECKOUT_COMMAND COLLIE_CHECKOUT_CWD COLLIE_CHECKOUT_TOKEN_FILE FREEAGENT_WORKSPACE FREEAGENT_STATE_ROOT; do
     [ -n "${!v:-}" ] && printf 'export %s=%q\n' "$v" "${!v}"
   done
 } > /tmp/freeagent.env

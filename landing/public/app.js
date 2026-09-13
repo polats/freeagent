@@ -1,14 +1,21 @@
-// freeagent: your boxes, on your own GitHub or Hugging Face account, driven from your phone.
+// freeagent: your boxes, on your own accounts, driven from your phone.
 // Boxes-first page modelled on the crux-android deployments screen. No backend of ours: tokens
 // live in this browser, boxes are read live from the providers, and the only server code is
 // functions/api/auth/[provider]/[action].js (OAuth code → token, because those endpoints send no
-// CORS headers and need the app secret).
+// CORS headers and need the app secret; and one relay to Railway, whose API refuses browsers).
+//
+// Accounts follow crux-android's model: GitHub is THE account — it signs you in, and it is the
+// identity every box recognises (a box knows its owner's GitHub login and pairs any device that
+// proves it holds that sign-in). Hugging Face and Railway are connected to it: places boxes can
+// also run, never a way in on their own.
 
 const CFG = window.FREEAGENT;
+const MAIN = "github";
+const PROVIDERS = ["github", "hf", "railway"]; // fixed order, like the app's Accounts screen
 const API = { github: "https://api.github.com", hf: "https://huggingface.co" };
-const LABEL = { github: "GitHub", hf: "Hugging Face" };
+const LABEL = { github: "GitHub", hf: "Hugging Face", railway: "Railway" };
 const SCOPE = { github: "codespace repo", hf: "openid profile manage-repos" };
-const SCOPE_TAG = { github: "v2", hf: "v1" }; // bump when a scope changes so older tokens are dropped
+const SCOPE_TAG = { github: "v2", hf: "v1", railway: "v1" }; // bump when a scope changes so older tokens are dropped
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -98,7 +105,19 @@ async function api(p, path, init = {}) {
 }
 async function whoami(p) {
   if (!tokenOf(p)) { delete user[p]; return; }
-  try { user[p] = p === "github" ? (await api("github", "/user")).login : (await api("hf", "/api/whoami-v2")).name; } catch { delete user[p]; }
+  try {
+    if (p === "github") user[p] = (await api("github", "/user")).login;
+    else if (p === "hf") user[p] = (await api("hf", "/api/whoami-v2")).name;
+    else user[p] = (await railwayWhoami(tokenOf(p))).name;
+  } catch { delete user[p]; }
+}
+// Railway's API allows only railway.com as a browser origin, so the one question the page has for
+// it — whose token is this? — goes through the Pages Function, which stores nothing.
+async function railwayWhoami(token) {
+  const res = await fetch("/api/auth/railway/whoami", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.name) { if (res.status === 400) dropToken("railway"); throw new Error(body.error ? `Railway: ${body.error}` : "Railway did not recognise that token."); }
+  return body;
 }
 
 // ---- Boxes ------------------------------------------------------------------------------------------------
@@ -232,11 +251,18 @@ async function wake(b) {
 }
 
 // What the box needs on first open, in the URL fragment (never sent to the server, stripped by the
-// PWA once consumed): an HF box's Collie token; a codespace's repo to clone, plus the GitHub token
-// when that repo is private. An HF box clones at boot from FREEAGENT_REPO, so it gets no repo here.
+// PWA once consumed). An HF box gets this device's GitHub token: the box knows its owner's login
+// (FREEAGENT_GITHUB_OWNER) and pairs any device that proves it holds that sign-in, so every device
+// signed in here gets in with nothing copied. The box's Collie token rides along when this browser
+// has it (boxes created before owners existed, or a box whose owner variable is missing) as the
+// fallback the PWA tries second. A codespace gets its repo to clone, plus the GitHub token when that
+// repo is private. An HF box clones at boot from FREEAGENT_REPO, so it gets no repo here.
 function handoffUrl(b) {
   const frag = new URLSearchParams();
-  if (b.p === "hf" && b.token) frag.set("token", b.token);
+  if (b.p === "hf") {
+    if (tokenOf("github")) frag.set("gh", tokenOf("github"));
+    if (b.token) frag.set("token", b.token);
+  }
   if (b.p === "github" && b.repo && !b.cloned) {
     frag.set("repo", b.repo);
     if (b.priv && tokenOf("github")) frag.set("gh", tokenOf("github"));
@@ -380,7 +406,9 @@ async function createSpace(name) {
         hardware: "cpu-basic",
         // A private repository is cloned at boot with the GitHub token; a public one needs none.
         secrets: [{ key: "COLLIE_AUTH_TOKEN", value: collieToken }, ...(pickedRepo && repoIsPrivate(pickedRepo) && tokenOf("github") ? [{ key: "GITHUB_TOKEN", value: tokenOf("github") }] : [])],
-        variables: pickedRepo ? [{ key: "FREEAGENT_REPO", value: pickedRepo }] : [],
+        // The owner's GitHub login: the box pairs any device signed in to that account (Collie's
+        // COLLIE_GITHUB_OWNER), which is what lets a second phone in without this token.
+        variables: [{ key: "FREEAGENT_GITHUB_OWNER", value: user.github }, ...(pickedRepo ? [{ key: "FREEAGENT_REPO", value: pickedRepo }] : [])],
       }),
     });
   } catch (e) {
@@ -392,13 +420,20 @@ async function createSpace(name) {
 }
 
 // ---- Accounts ---------------------------------------------------------------------------------------------------
+// crux-android's rules: the main account is never "disconnected" (sign out instead); a connected
+// account with boxes on it cannot be disconnected until they are deleted, and the button says why.
 function renderAccounts() {
-  for (const p of ["github", "hf"]) {
+  for (const p of PROVIDERS) {
     $(`acct-${p}`).hidden = !config[p];
     $(`acct-${p}-sub`).textContent = user[p] ?? "not connected";
     $(`acct-${p}-connect`).hidden = Boolean(user[p]);
+    if (p === MAIN) continue;
+    const btn = $(`acct-${p}-disconnect`);
+    btn.hidden = !user[p];
+    const has = boxes.filter((b) => b.p === p).length;
+    btn.disabled = has > 0;
+    btn.title = has > 0 ? `Delete this account's ${has === 1 ? "box" : "boxes"} first` : "";
   }
-  $("acct-hf-disconnect").hidden = !user.hf;
   $("signout").hidden = !user.github;
   $("github-details").hidden = !config.github || Boolean(user.github);
   if (config.github) $("github-details-text").textContent = `client id ${config.github.client_id.slice(0, 8)}… · callback ${config.github.redirect_uri}`;
@@ -418,13 +453,12 @@ function schedulePoll() {
 }
 
 async function render() {
-  await Promise.all(["github", "hf"].map(whoami));
+  await Promise.all(PROVIDERS.map(whoami));
   renderAccounts();
-  const signedIn = Boolean(user.github || user.hf);
+  const signedIn = Boolean(user[MAIN]);
   $("signed-out").hidden = signedIn;
   $("boxes-view").hidden = !signedIn;
   $("new-box").hidden = !signedIn;
-  $("signin-hf-alt").hidden = !config.hf;
   if (!signedIn) { clearTimeout(pollTimer); return; }
   if (boxes.length === 0) $("skeleton").hidden = false;
   await refresh();
@@ -432,11 +466,10 @@ async function render() {
 }
 
 async function main() {
-  await Promise.all(["github", "hf"].map(detect));
-  if (!config.github && !config.hf) { $("signed-out").hidden = false; $("signed-out-error").textContent = "No sign-in is configured on this deployment."; return; }
+  await Promise.all(PROVIDERS.map(detect));
+  if (!config.github) { $("signed-out").hidden = false; $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
 
   $("signin-github").onclick = () => signIn("github");
-  $("signin-hf-alt").onclick = () => signIn("hf");
   $("new-box").onclick = openCreate; $("new-box-empty").onclick = openCreate;
   $("create-provider").onchange = onProviderChange;
   $("repo-picker").onclick = () => { if (user.github) openRepoSearch(); else { $("create").close(); signIn("github", "create"); } };
@@ -450,11 +483,24 @@ async function main() {
   $("acct-github-connect").onclick = () => signIn("github");
   $("acct-hf-connect").onclick = () => signIn("hf");
   $("acct-hf-disconnect").onclick = () => { dropToken("hf"); toast("Hugging Face disconnected"); $("accounts").close(); render(); };
-  $("signout").onclick = () => { dropToken("github"); dropToken("hf"); toast("Signed out"); $("accounts").close(); render(); };
+  $("acct-railway-connect").onclick = () => { $("accounts").close(); $("railway-token").value = ""; $("railway-error").textContent = ""; $("railway").showModal(); };
+  $("acct-railway-disconnect").onclick = () => { dropToken("railway"); toast("Railway disconnected"); $("accounts").close(); render(); };
+  $("railway-cancel").onclick = () => $("railway").close();
+  $("railway-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    $("railway-submit").disabled = true; $("railway-error").textContent = "";
+    try {
+      const me = await railwayWhoami($("railway-token").value.trim());
+      storeToken("railway", $("railway-token").value.trim());
+      $("railway").close(); toast(`Railway connected as ${me.name}`); await render();
+    } catch (e) { $("railway-error").textContent = e.message; }
+    $("railway-submit").disabled = false;
+  };
+  $("signout").onclick = () => { for (const p of PROVIDERS) dropToken(p); toast("Signed out"); $("accounts").close(); render(); };
   $("github-device").onclick = (ev) => { ev.preventDefault(); $("accounts").close(); signInWithCode().catch((e) => toast(e.message)); };
   $("device-cancel").onclick = () => $("device").close();
   $("confirm-cancel").onclick = () => $("confirm").close();
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && (user.github || user.hf)) refresh(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && user[MAIN]) refresh(); });
 
   const params = new URLSearchParams(location.search);
   if (params.get("error")) { history.replaceState(null, "", "/"); $("signed-out-error").textContent = `Sign-in failed: ${params.get("error_description") ?? params.get("error")}`; }
@@ -463,7 +509,7 @@ async function main() {
     try { intent = (await finishSignIn(params)).intent; toast("Signed in"); } catch (e) { $("signed-out-error").textContent = e.message; }
   }
   await render();
-  if (intent === "create" && (user.github || user.hf)) openCreate();
+  if (intent === "create" && user[MAIN]) openCreate();
 }
 
 main().catch((e) => { $("signed-out").hidden = false; $("signed-out-error").textContent = e.message; });

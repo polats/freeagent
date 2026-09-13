@@ -38,11 +38,13 @@ creates boxes through the providers' own APIs and lists, opens and deletes the o
 | Platform | Created by | What keeps strangers out | Persistence |
 | --- | --- | --- | --- |
 | GitHub Codespaces (default) | the landing page, via GitHub's API | the forwarded port is private to your GitHub account | disk survives idle stops (1 h idle timeout, free plan 120 core-hours/month) |
-| Hugging Face Spaces | the landing page, by duplicating the template Space `polats/freeagent` | `COLLIE_AUTH_TOKEN`, a secret set at creation; the page hands it to your phone once | none on the free tier: a restart forgets agent sign-ins unless you add paid storage |
-| Railway, or any Docker host | you | `COLLIE_AUTH_TOKEN` | attach a volume at `/data` |
+| Hugging Face Spaces | the landing page, by duplicating the template Space `polats/freeagent` | your GitHub sign-in: the box knows its owner (`FREEAGENT_GITHUB_OWNER`) and pairs any device that proves it holds that account; `COLLIE_AUTH_TOKEN`, a secret set at creation, stays as the root credential | none on the free tier: a restart forgets agent sign-ins unless you add paid storage |
+| Railway, or any Docker host | you | `COLLIE_AUTH_TOKEN`, plus `FREEAGENT_GITHUB_OWNER` to pair by GitHub sign-in | attach a volume at `/data` |
 
-The token is a root credential to a shell. The entrypoint refuses to start without one on any
-platform whose URL is public; Codespaces are the exception because the port is already private.
+GitHub is the account: it signs you in to the landing page on every device, and it is the identity a
+box recognises. Hugging Face and Railway are connected to it, as places boxes can also run. The
+token is a root credential to a shell. The entrypoint refuses to start without one on any platform
+whose URL is public; Codespaces are the exception because the port is already private.
 
 ## Starting from a repository
 
@@ -99,6 +101,7 @@ as a secret before the first boot and mount a volume at `/data`.
 | --- | --- | --- |
 | `PORT` | `7860` | Listen port. Railway sets it; a Space must match `app_port`. |
 | `COLLIE_AUTH_TOKEN` | — | Root bearer secret. Required unless running as a Codespace. |
+| `FREEAGENT_GITHUB_OWNER` | — | GitHub login that owns the box. Collie pairs any device whose GitHub token belongs to it (`POST /api/pair/github`), so a second phone needs only the landing page's sign-in. |
 | `FREEAGENT_PUBLIC_HOST` | platform-derived | Hostname Collie is served on, from `SPACE_HOST`, `RAILWAY_PUBLIC_DOMAIN` or the Codespace name. |
 | `FREEAGENT_ALLOW_ANY_HOST` | — | `1` to skip Host validation (local docker only). |
 | `FREEAGENT_STATE_ROOT` | `/data` | Writable mount for herdr, collie, agent sign-ins and the workspace. |

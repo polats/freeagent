@@ -8,6 +8,9 @@
 //     POST /api/auth/github/poll {device_code} → { access_token } | { error: "authorization_pending" | … }
 //   Hugging Face — authorization code with the app secret; callback = this site's root URL:
 //     POST /api/auth/hf/token {code}          → { access_token }
+//   Railway — a pasted account token; Railway's API allows only railway.com as a browser origin, so
+//   the page cannot ask it whose token that is. This relays that one question and stores nothing:
+//     POST /api/auth/railway/whoami {token}   → { name, email } | { error }
 //   Either — GET /api/auth/<provider>/config  → { client_id } when configured, else 404.
 //
 // Secrets on the Pages project: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, HF_CLIENT_ID, HF_CLIENT_SECRET.
@@ -55,6 +58,21 @@ export async function onRequest({ request, env, params }) {
       return forward(`${HF}/oauth/token`, { grant_type: "authorization_code", code: body.code, redirect_uri: `${self}/` }, {
         authorization: `Basic ${btoa(`${env.HF_CLIENT_ID}:${env.HF_CLIENT_SECRET}`)}`,
       });
+    }
+  }
+
+  if (provider === "railway") {
+    if (action === "config" && request.method === "GET") return json({ relay: true });
+    if (action === "whoami" && request.method === "POST" && typeof body.token === "string" && body.token.length < 512) {
+      const res = await fetch("https://backboard.railway.com/graphql/v2", {
+        method: "POST",
+        headers: { authorization: `Bearer ${body.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ query: "query { me { name email } }" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const me = data?.data?.me;
+      if (!res.ok || !me) return json({ error: data?.errors?.[0]?.message ?? `HTTP ${res.status}` }, 400);
+      return json({ name: me.name, email: me.email });
     }
   }
 

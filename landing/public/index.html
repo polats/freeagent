@@ -23,8 +23,8 @@
       <div class="mark">GitHub</div>
       <h1>Sign in</h1>
       <p>Your coding agents, on a box you own, from your phone. Claude Code, Codex and OpenCode on a machine in your own account.</p>
+      <p class="hint">GitHub is your account here. Connect Hugging Face or Railway afterwards to run boxes there.</p>
       <button class="filled" id="signin-github">Sign in with GitHub</button>
-      <button class="text" id="signin-hf-alt" hidden>Use Hugging Face instead</button>
       <p class="error" id="signed-out-error"></p>
     </div>
   </section>
@@ -74,7 +74,7 @@
       <label class="field" id="visibility-field" hidden>
         <span>Space visibility</span>
         <select id="create-visibility">
-          <option value="public">Public (Collie's token is the door)</option>
+          <option value="public">Public (your GitHub sign-in is the door)</option>
           <option value="private">Private</option>
         </select>
       </label>
@@ -96,7 +96,7 @@
   </div>
 </dialog>
 
-<!-- Accounts -->
+<!-- Accounts: GitHub is the account; the others are connected to it, like the crux-android Accounts screen -->
 <dialog id="accounts">
   <h2>Accounts</h2>
   <div class="row" id="acct-github" hidden>
@@ -107,6 +107,11 @@
     <div><strong>Hugging Face</strong><div class="sub" id="acct-hf-sub"></div></div>
     <div class="slot"><button class="outlined small" id="acct-hf-connect" hidden>Connect</button><button class="text small" id="acct-hf-disconnect" hidden>Disconnect</button></div>
   </div>
+  <div class="row" id="acct-railway" hidden>
+    <div><strong>Railway</strong><div class="sub" id="acct-railway-sub"></div></div>
+    <div class="slot"><button class="outlined small" id="acct-railway-connect" hidden>Connect</button><button class="text small" id="acct-railway-disconnect" hidden>Disconnect</button></div>
+  </div>
+  <p class="hint">Your GitHub account signs you in and opens your boxes on every device. Connected accounts are where boxes can also run.</p>
   <details class="sub" id="github-details" hidden><summary>GitHub sign-in details</summary>
     <p id="github-details-text"></p>
     <p>If GitHub refuses the redirect, check the OAuth App's callback URL is exactly the one above, or <a href="#" id="github-device">sign in with a code instead</a>.</p>
@@ -120,6 +125,17 @@
   <h2>Delete this box?</h2>
   <p id="confirm-text"></p>
   <div class="actions"><button class="text" id="confirm-cancel">Cancel</button><button class="filled danger" id="confirm-ok">Delete</button></div>
+</dialog>
+
+<!-- Railway: an account token, pasted (Railway's OAuth needs a client secret a static page cannot hold) -->
+<dialog id="railway">
+  <form method="dialog" id="railway-form">
+    <h2>Connect Railway</h2>
+    <p>Create an account token at <a href="https://railway.com/account/tokens" target="_blank" rel="noopener">railway.com/account/tokens</a> and paste it here. It stays in this browser.</p>
+    <label class="field"><span>Account token</span><input id="railway-token" autocomplete="off" spellcheck="false" required></label>
+    <p class="error" id="railway-error"></p>
+    <div class="actions"><button type="button" class="text" id="railway-cancel">Cancel</button><button type="submit" class="filled" id="railway-submit">Connect</button></div>
+  </form>
 </dialog>
 
 <!-- Device-code fallback -->
