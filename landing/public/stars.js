@@ -71,8 +71,8 @@
       // the home drifts slowly and wraps; the star is a damped spring on it, so whatever the hand
       // does, the star is back within a second or so and the sky never goes dark around the finger
       OX[i] += HX[i] * dt; OY[i] += HY[i] * dt;
-      if (OX[i] < -20) OX[i] += w + 40; else if (OX[i] > w + 20) OX[i] -= w + 40;
-      if (OY[i] < -20) OY[i] += h + 40; else if (OY[i] > h + 20) OY[i] -= h + 40;
+      if (OX[i] < -20) { OX[i] += w + 40; X[i] += w + 40; PX[i] = X[i]; } else if (OX[i] > w + 20) { OX[i] -= w + 40; X[i] -= w + 40; PX[i] = X[i]; }
+      if (OY[i] < -20) { OY[i] += h + 40; Y[i] += h + 40; PY[i] = Y[i]; } else if (OY[i] > h + 20) { OY[i] -= h + 40; Y[i] -= h + 40; PY[i] = Y[i]; }
       let ax = (OX[i] - X[i]) * 4 - VX[i] * 2.2, ay = (OY[i] - Y[i]) * 4 - VY[i] * 2.2;
       if (hand.active) {
         const dx = X[i] - hand.x, dy = Y[i] - hand.y, d2 = dx * dx + dy * dy;
@@ -134,7 +134,7 @@
       const ox = lean.x * z, oy = lean.y * z;
       // a fast star leaves a streak behind it
       const sx = X[i] - PX[i], sy = Y[i] - PY[i], sp = Math.hypot(sx, sy);
-      if (sp > 2.5) {
+      if (sp > 2.5 && heat > 0.05) {
         ctx.globalAlpha = Math.min(0.9, alpha) * Math.min(1, sp / 14);
         ctx.strokeStyle = heat > 0.15 ? LIME : "rgb(232 236 255)"; ctx.lineWidth = Math.max(1, size * 0.28); ctx.lineCap = "round";
         ctx.beginPath(); ctx.moveTo(PX[i] + ox - sx * 2.5, PY[i] + oy - sy * 2.5); ctx.lineTo(X[i] + ox, Y[i] + oy); ctx.stroke();
