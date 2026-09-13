@@ -1,12 +1,77 @@
 {
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Bento"
+    },
+    {
+      "id": "page-2",
+      "name": "Directions"
+    }
+  ],
   "artboards": [
     {
       "file": "Main.dc.html",
-      "title": "A \u00b7 Collie-native (leading)",
+      "title": "Boxes",
       "x": 0,
       "y": 0,
       "w": 390,
-      "h": 844
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "SignIn.dc.html",
+      "title": "Sign in",
+      "x": 480,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Empty.dc.html",
+      "title": "No boxes",
+      "x": 960,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Accounts.dc.html",
+      "title": "Accounts",
+      "x": 0,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "NewBox.dc.html",
+      "title": "New box",
+      "x": 480,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "BoxActions.dc.html",
+      "title": "Box actions",
+      "x": 960,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "DirectionA.dc.html",
+      "title": "A \u00b7 Collie-native",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
     },
     {
       "file": "DirectionB.dc.html",
@@ -14,47 +79,8 @@
       "x": 480,
       "y": 0,
       "w": 390,
-      "h": 844
-    },
-    {
-      "file": "DirectionC.dc.html",
-      "title": "C \u00b7 Bento",
-      "x": 960,
-      "y": 0,
-      "w": 390,
-      "h": 844
-    },
-    {
-      "file": "SignIn.dc.html",
-      "title": "A \u00b7 Sign in",
-      "x": 0,
-      "y": 1000,
-      "w": 390,
-      "h": 844
-    },
-    {
-      "file": "Empty.dc.html",
-      "title": "A \u00b7 No boxes",
-      "x": 480,
-      "y": 1000,
-      "w": 390,
-      "h": 844
-    },
-    {
-      "file": "Accounts.dc.html",
-      "title": "A \u00b7 Accounts",
-      "x": 960,
-      "y": 1000,
-      "w": 390,
-      "h": 844
-    },
-    {
-      "file": "NewBox.dc.html",
-      "title": "A \u00b7 New box",
-      "x": 1440,
-      "y": 1000,
-      "w": 390,
-      "h": 844
+      "h": 844,
+      "page": "page-2"
     }
   ],
   "annotations": [
@@ -63,38 +89,28 @@
       "x": -320,
       "y": 0,
       "w": 280,
-      "text": "freeagent \u00b7 phone\n\nGitHub is the account. Hugging Face and Railway are connected under it. No prose on any screen: a wordmark, the list, one action.\n\nResearch takeaways applied: one primary action per screen in thumb reach \u00b7 44px+ targets \u00b7 bottom sheets instead of dialogs \u00b7 bold type, generous space \u00b7 status as colour + one word."
-    },
-    {
-      "id": "dir-a",
-      "x": 0,
-      "y": -140,
-      "w": 390,
-      "text": "A \u00b7 Collie-native. Same tokens as the app you land in (Aldrich, 2px radius, Collie status colours, rules not cards). Trade-off: quietest of the three; relies on type and rhythm, not shape."
-    },
-    {
-      "id": "dir-b",
-      "x": 480,
-      "y": -140,
-      "w": 390,
-      "text": "B \u00b7 Bold minimal. Oversized headline, soft cards, one accent, floating pill CTA. Trade-off: a different world from Collie's dark 2px UI, so the hand-off will feel like a jump."
-    },
-    {
-      "id": "dir-c",
-      "x": 960,
-      "y": -140,
-      "w": 390,
-      "text": "C \u00b7 Bento. Two-column tiles, glowing status dot, the last tile is New box. Trade-off: repo names truncate hard at 170px, and a long list scrolls in pairs."
+      "page": "page-1",
+      "text": "freeagent \u00b7 Bento (chosen 2026-09-13)\n\nGitHub is the account. Hugging Face and Railway are connected under it. No prose on any screen.\n\nBuilt into landing/public: tiles, dashed + tile = New box, every dialog is a bottom sheet, IBM Plex Sans self-hosted from Collie."
     },
     {
       "id": "flow",
       "x": -320,
       "y": 1000,
       "w": 280,
-      "text": "Flow in direction A.\n\nSign in: mark, wordmark, one button.\nBoxes: rows, status word + provider tag, New box pinned bottom.\nAccounts: bottom sheet from the avatar. GitHub row signs out; the others Connect / Disconnect. Disconnect greys out while boxes exist on that account.\nNew box: where (only connected accounts appear), repository, name. Create."
+      "page": "page-1",
+      "text": "Accounts opens from the avatar. GitHub row signs out; the others Connect / Disconnect, and Disconnect dims while boxes exist on that account.\n\nNew box: where (only connected accounts), repository, name. Machine or visibility appear as a row per provider.\n\nBox actions from the \u22ef on a tile."
+    },
+    {
+      "id": "parked",
+      "x": -320,
+      "y": 0,
+      "w": 280,
+      "page": "page-2",
+      "text": "Not chosen. Kept for reference."
     }
   ],
   "launch": {
-    "view": "canvas"
+    "view": "canvas",
+    "page": "page-1"
   }
 }
