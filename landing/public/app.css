@@ -7,12 +7,8 @@
   --running:var(--lime);--pending:oklch(0.82 0.15 82);--stopped:oklch(0.6 0.03 250);--failed:oklch(0.7 0.2 24);--danger:oklch(0.7 0.2 24);
   --scrim:oklch(0 0 0 / 55%);
 }
-@media (prefers-color-scheme: light){:root{
-  --bg:var(--cosmicgreu);--tile:#fff;--tile-hi:#efeeee;--fg:var(--black);--muted:#5d6c7b;
-  --edge:oklch(0 0 0 / 8%);--edge-hi:oklch(0 0 0 / 16%);--primary:var(--black);--on-primary:var(--lime);
-  --running:oklch(0.72 0.22 128);--pending:oklch(0.65 0.15 82);--stopped:oklch(0.55 0.03 250);--failed:oklch(0.58 0.2 24);--danger:oklch(0.58 0.2 24);
-  --scrim:oklch(0 0 0 / 35%);
-}}
+/* Dark only. A light scheme once turned desktops gray while phones stayed black; the app is one colour now. */
+:root{color-scheme:dark}
 *{box-sizing:border-box}
 html{background:var(--bg)}
 body{margin:0;min-height:100dvh;background:var(--bg);color:var(--fg);font:15px/1.4 "IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
@@ -23,18 +19,24 @@ button{cursor:pointer;border:0;background:none;padding:0}
 
 .topbar{position:relative;z-index:2;height:56px;margin-top:env(safe-area-inset-top);padding:0 20px;display:flex;align-items:center;justify-content:space-between;max-width:720px;margin-inline:auto}
 .brand{font-size:17px;font-weight:600}
+.brand .free{color:var(--lime)}
 .avatar{width:44px;height:44px;margin-right:-6px;display:grid;place-items:center;border-radius:22px}
 .avatar span{width:32px;height:32px;border-radius:16px;background:var(--lime);color:var(--black);display:grid;place-items:center;font-size:13px;font-weight:600;text-transform:uppercase}
 .avatar:active span{background:var(--tile-hi)}
 
 main{max-width:720px;margin:0 auto;padding:8px 20px calc(24px + env(safe-area-inset-bottom))}
 
-/* signed out — the same top bar and ground as signed in, the cosmiclabs.org stars under it, one button */
+/* signed out — the same top bar and ground as signed in; the sky under it; what the app is; one button */
 body:has(#signed-out:not([hidden])){overscroll-behavior:none}
 #signed-out{position:fixed;inset:0;z-index:1;background:var(--bg);color:var(--fg);overflow:hidden}
-#signed-out .dithered-container{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
-#signed-out .signin{position:absolute;left:20px;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
-.filled.github{gap:10px;height:52px;font-size:16px}
+#stars{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+#signed-out .signin{position:absolute;left:20px;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:16px;pointer-events:none}
+#signed-out .signin>*{pointer-events:auto}
+.intro{pointer-events:none!important;text-shadow:0 1px 12px var(--bg),0 0 2px var(--bg)}
+.intro h1{margin:0 0 8px;font-size:26px;line-height:1.2;font-weight:600;letter-spacing:-.01em}
+.intro p{margin:0;color:var(--muted);font-size:15px;line-height:1.45;max-width:36ch}
+.github{height:52px;padding:0 20px;border-radius:12px;background:var(--fg);color:var(--bg);font-weight:600;font-size:16px;display:flex;align-items:center;justify-content:center;gap:10px;width:100%}
+.github:active{background:oklch(0.88 0.005 260)}
 #signed-out .error{color:var(--muted);text-align:center}
 
 /* tiles */

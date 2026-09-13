@@ -1,395 +1,171 @@
-// The star effect from cosmiclabs.org (index.html, inline script), reused as is: the silver stars
-// image (images/allstars.png) is dithered with a 4×4 Bayer matrix into 2px particles — lime for the
-// bright pixels — that float idly and scatter from the pointer, then drift home. Lines marked
-// FREEAGENT are the only additions: touch input with a wider reach, particle colours as options (the
-// site draws on its gray page, freeagent on the app's dark ground), the image repeated down a
-// portrait screen so a phone is covered, stop(), and a manual start.
-// Main script
-class Particle {
-    constructor(x, y, isWhite, bayerX, bayerY) {
-        this.pos = { x, y };
-        this.origin = { x, y };
-        this.vel = { x: 0, y: 0 };
-        this.dispersed = false;
-        this.isStatic = false;
-        this.isWhite = isWhite;
-        this.baseSize = 2;
-        this.maxSize = 3;
-        this.currentSize = this.baseSize;
-        this.bayerX = bayerX;
-        this.bayerY = bayerY;
-        this.returnSpeed = 0.05;
-        this.lastMouseX = null;
-        this.lastMouseY = null;
-        this.lastMouseVelX = 0;
-        this.lastMouseVelY = 0;
+// The sign-in sky. A few hundred stars in three depths that drift, twinkle and answer the hand:
+// dragging stirs them along with the finger, with the ones you touch lighting up lime and cooling
+// back to white; a tap sends the nearby stars streaking outward like shooting stars; the whole
+// field leans a little toward the finger for depth. Built the way the fast ones are built —
+// struct-of-arrays in Float32Arrays, one canvas, pre-rendered glow sprites drawn additively, pixel
+// ratio capped, the loop stopped when the screen is hidden — so it holds 60fps on a phone.
+(() => {
+  const LIME = "#baff00";
+  const DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-        // Idle floating animation
-        this.idleTime = Math.random() * Math.PI * 2; // random phase offset
-        this.idleSpeed = 0.8 + Math.random() * 0.6; // faster oscillation
-        this.idleAmplitude = 4 + Math.random() * 4; // 4-8px float range
+  let canvas, ctx, w = 0, h = 0, N = 0, raf = 0, running = false, last = 0, ro = null;
+  // struct of arrays
+  let X, Y, Z, VX, VY, HX, HY, HEAT, PH, TW, PX, PY;
+  // the hand
+  const hand = { x: -1e4, y: -1e4, vx: 0, vy: 0, down: false, active: false, downX: 0, downY: 0, downAt: 0, moved: 0 };
+  const lean = { x: 0, y: 0 }; // parallax offset, eased toward the finger
+
+  // ---- sprites: a soft disc with a hot core, in white and in lime, drawn once ---------------------
+  const sprites = {};
+  function makeSprite(color, core) {
+    const R = 24, c = document.createElement("canvas"); c.width = c.height = R * 2;
+    const g = c.getContext("2d"), grad = g.createRadialGradient(R, R, 0, R, R, R);
+    grad.addColorStop(0, core); grad.addColorStop(0.18, color); grad.addColorStop(0.45, color.replace(")", " / 35%)")); grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad; g.fillRect(0, 0, R * 2, R * 2);
+    return c;
+  }
+  function buildSprites() {
+    sprites.white = makeSprite("rgb(232 236 255)", "#ffffff");
+    sprites.lime = makeSprite("rgb(186 255 0)", "#f4ffd6");
+  }
+
+  // ---- field -------------------------------------------------------------------------------------
+  function seed() {
+    N = Math.max(140, Math.min(420, Math.round((w * h) / 2600)));
+    X = new Float32Array(N); Y = new Float32Array(N); Z = new Float32Array(N);
+    VX = new Float32Array(N); VY = new Float32Array(N); HX = new Float32Array(N); HY = new Float32Array(N);
+    HEAT = new Float32Array(N); PH = new Float32Array(N); TW = new Float32Array(N); PX = new Float32Array(N); PY = new Float32Array(N);
+    for (let i = 0; i < N; i += 1) {
+      X[i] = PX[i] = Math.random() * w; Y[i] = PY[i] = Math.random() * h;
+      Z[i] = 0.25 + Math.random() ** 2 * 0.75;              // most stars far and small
+      const a = Math.random() * Math.PI * 2, sp = 2 + Z[i] * 6; // slow home drift, faster when near
+      HX[i] = Math.cos(a) * sp; HY[i] = Math.sin(a) * sp;
+      PH[i] = Math.random() * Math.PI * 2; TW[i] = 0.5 + Math.random() * 1.5;
     }
+  }
 
-    update(mx, my, dispersionRadius, time) {
-        // Idle floating animation when not dispersed
-        this.idleTime += 0.016 * this.idleSpeed;
-        
-        if (this.lastMouseX !== null) {
-            this.lastMouseVelX = mx - this.lastMouseX;
-            this.lastMouseVelY = my - this.lastMouseY;
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    w = Math.max(1, Math.round(r.width)); h = Math.max(1, Math.round(r.height));
+    canvas.width = Math.round(w * DPR); canvas.height = Math.round(h * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    seed();
+    if (reduced) draw(0);
+  }
+
+  // ---- physics -----------------------------------------------------------------------------------
+  const REACH = 150, REACH2 = REACH * REACH;
+  function step(dt, t) {
+    // the field leans toward the finger — the near stars most — so the sky has depth under the hand
+    const tx = hand.active ? ((hand.x - w / 2) / w) * 26 : 0, ty = hand.active ? ((hand.y - h / 2) / h) * 26 : 0;
+    lean.x += (tx - lean.x) * Math.min(1, dt * 3); lean.y += (ty - lean.y) * Math.min(1, dt * 3);
+    const hvx = hand.vx, hvy = hand.vy, hspeed = Math.hypot(hvx, hvy);
+    for (let i = 0; i < N; i += 1) {
+      PX[i] = X[i]; PY[i] = Y[i];
+      let ax = (HX[i] - VX[i]) * 1.2, ay = (HY[i] - VY[i]) * 1.2; // ease back to the drift
+      if (hand.active) {
+        const dx = X[i] - hand.x, dy = Y[i] - hand.y, d2 = dx * dx + dy * dy;
+        if (d2 < REACH2) {
+          const d = Math.sqrt(d2) + 4, k = (1 - d / REACH), z = Z[i];
+          // stirred along with the finger (its velocity), and pushed gently aside so it parts around it
+          ax += hvx * k * 9 * z + (dx / d) * k * 160 * z;
+          ay += hvy * k * 9 * z + (dy / d) * k * 160 * z;
+          if (hspeed > 40 || hand.down) HEAT[i] = Math.min(1, HEAT[i] + k * dt * (hand.down ? 6 : 3));
         }
-
-        const mouseHasMoved =
-            this.lastMouseX !== mx || this.lastMouseY !== my;
-        this.lastMouseX = mx;
-        this.lastMouseY = my;
-
-        const dx = mx - this.pos.x;
-        const dy = my - this.pos.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < dispersionRadius) {
-            if (!this.dispersed || mouseHasMoved) {
-                const impact = 1 - distance / dispersionRadius;
-                const angle = Math.atan2(dy, dx);
-                let velocityX =
-                    -Math.cos(angle) * (3 + Math.random() * 2);
-                let velocityY =
-                    -Math.sin(angle) * (3 + Math.random() * 2);
-                velocityX += this.lastMouseVelX * 0.5;
-                velocityY += this.lastMouseVelY * 0.5;
-                velocityX += (Math.random() - 0.5) * 2;
-                velocityY += (Math.random() - 0.5) * 2;
-                this.vel.x = velocityX * impact;
-                this.vel.y = velocityY * impact;
-                this.dispersed = true;
-                this.isStatic = false;
-                this.currentSize =
-                    this.baseSize +
-                    Math.random() * (this.maxSize - this.baseSize);
-            }
-        }
-
-        if (this.dispersed) {
-            if (!mouseHasMoved && distance > dispersionRadius) {
-                if (!this.isStatic) {
-                    this.isStatic = true;
-                    this.vel.x += (Math.random() - 0.5) * 0.3;
-                    this.vel.y += (Math.random() - 0.5) * 0.3;
-                }
-            } else {
-                this.isStatic = false;
-            }
-
-            if (!this.isStatic) {
-                this.pos.x += this.vel.x;
-                this.pos.y += this.vel.y;
-                this.vel.x += (Math.random() - 0.5) * 0.2;
-                this.vel.y += (Math.random() - 0.5) * 0.2;
-
-                if (distance > dispersionRadius * 1.5) {
-                    const returnX = this.origin.x - this.pos.x;
-                    const returnY = this.origin.y - this.pos.y;
-                    const returnDist = Math.sqrt(
-                        returnX * returnX + returnY * returnY,
-                    );
-
-                    if (returnDist > 2) {
-                        this.vel.x += returnX * this.returnSpeed;
-                        this.vel.y += returnY * this.returnSpeed;
-                    } else {
-                        this.reset();
-                    }
-                }
-
-                this.vel.x *= 0.95;
-                this.vel.y *= 0.95;
-
-                const rect = this.canvas.getBoundingClientRect();
-                if (this.pos.x < 0 || this.pos.x > rect.width) {
-                    this.vel.x *= -0.8;
-                    this.pos.x = Math.max(
-                        0,
-                        Math.min(this.pos.x, rect.width),
-                    );
-                }
-                if (this.pos.y < 0 || this.pos.y > rect.height) {
-                    this.vel.y *= -0.8;
-                    this.pos.y = Math.max(
-                        0,
-                        Math.min(this.pos.y, rect.height),
-                    );
-                }
-            }
-        }
+      }
+      VX[i] += ax * dt; VY[i] += ay * dt;
+      const cap = 160 + Z[i] * 420, v = Math.hypot(VX[i], VY[i]);
+      if (v > cap) { VX[i] *= cap / v; VY[i] *= cap / v; }
+      X[i] += VX[i] * dt; Y[i] += VY[i] * dt;
+      HEAT[i] = Math.max(0, HEAT[i] - dt * 0.9);
+      // wrap, and forget the previous position across the seam so no streak spans the screen
+      if (X[i] < -20) { X[i] += w + 40; PX[i] = X[i]; } else if (X[i] > w + 20) { X[i] -= w + 40; PX[i] = X[i]; }
+      if (Y[i] < -20) { Y[i] += h + 40; PY[i] = Y[i]; } else if (Y[i] > h + 20) { Y[i] -= h + 40; PY[i] = Y[i]; }
     }
+    // the finger's velocity decays between events, so a still finger stops stirring
+    hand.vx *= Math.max(0, 1 - dt * 8); hand.vy *= Math.max(0, 1 - dt * 8);
+  }
 
-    reset() {
-        this.pos.x = this.origin.x;
-        this.pos.y = this.origin.y;
-        this.vel.x = 0;
-        this.vel.y = 0;
-        this.dispersed = false;
-        this.isStatic = false;
-        this.currentSize = this.baseSize;
+  function burst(x, y) {
+    for (let i = 0; i < N; i += 1) {
+      const dx = X[i] - x, dy = Y[i] - y, d2 = dx * dx + dy * dy;
+      if (d2 < 190 * 190) {
+        const d = Math.sqrt(d2) + 6, k = 1 - d / 190;
+        VX[i] += (dx / d) * k * (380 + 420 * Z[i]); VY[i] += (dy / d) * k * (380 + 420 * Z[i]);
+        HEAT[i] = 1;
+      }
     }
+  }
 
-    draw(ctx) {
-        // FREEAGENT: colours come from the effect (lime on the app's dark ground) instead of the site's gray page
-        ctx.fillStyle = this.isWhite ? this.colors.bright : this.colors.dim;
-        const offset = (this.currentSize - this.baseSize) / 2;
-        
-        // Apply idle floating offset when not dispersed
-        let drawX = this.pos.x;
-        let drawY = this.pos.y;
-        if (!this.dispersed) {
-            drawY += Math.sin(this.idleTime) * this.idleAmplitude;
-            drawX += Math.sin(this.idleTime * 0.7 + this.bayerX) * this.idleAmplitude * 0.5;
-        }
-        
-        ctx.fillRect(
-            drawX - offset,
-            drawY - offset,
-            this.currentSize,
-            this.currentSize,
-        );
+  // ---- draw --------------------------------------------------------------------------------------
+  function draw(t) {
+    ctx.clearRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < N; i += 1) {
+      const z = Z[i], heat = HEAT[i];
+      const tw = 0.6 + 0.4 * Math.sin(t * 0.001 * TW[i] + PH[i]);
+      const alpha = (0.28 + 0.72 * z) * tw * (0.7 + 0.3 * heat) ;
+      const size = (2.2 + z * 7) * (1 + heat * 0.6);
+      const ox = lean.x * z, oy = lean.y * z;
+      // a fast star leaves a streak behind it
+      const sx = X[i] - PX[i], sy = Y[i] - PY[i], sp = Math.hypot(sx, sy);
+      if (sp > 2.5) {
+        ctx.globalAlpha = Math.min(0.9, alpha) * Math.min(1, sp / 14);
+        ctx.strokeStyle = heat > 0.15 ? LIME : "rgb(232 236 255)"; ctx.lineWidth = Math.max(1, size * 0.28); ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(PX[i] + ox - sx * 2.5, PY[i] + oy - sy * 2.5); ctx.lineTo(X[i] + ox, Y[i] + oy); ctx.stroke();
+      }
+      ctx.globalAlpha = alpha * (1 - heat);
+      ctx.drawImage(sprites.white, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2);
+      if (heat > 0.02) { ctx.globalAlpha = alpha * heat; ctx.drawImage(sprites.lime, X[i] + ox - size, Y[i] + oy - size, size * 2, size * 2); }
     }
-}
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  }
 
-class DitheredPixelEffect {
-    constructor(containerSelector, options = {}) {
-        // FREEAGENT: the two particle colours, and how far a touch reaches (a finger is wider than a cursor)
-        this.colors = { bright: options.bright ?? "#baff00", dim: options.dim ?? "#d9d6d6" };
-        this.touchRadius = options.touchRadius ?? 90;
-        // Create container if it doesn't exist
-        let container = document.querySelector(containerSelector);
-        if (!container) {
-            container = document.createElement("div");
-            container.className = "dithered-container";
-            document.body.appendChild(container);
-        }
+  function frame(now) {
+    if (!running) return;
+    const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
+    step(dt, now); draw(now);
+    raf = requestAnimationFrame(frame);
+  }
 
-        this.container = container;
+  // ---- the hand ------------------------------------------------------------------------------------
+  function at(ev) { const r = canvas.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
+  function onDown(ev) { const p = at(ev); hand.x = hand.downX = p.x; hand.y = hand.downY = p.y; hand.vx = hand.vy = 0; hand.moved = 0; hand.downAt = performance.now(); hand.down = true; hand.active = true; canvas.setPointerCapture?.(ev.pointerId); }
+  function onMove(ev) {
+    const p = at(ev);
+    if (hand.active) { hand.vx = hand.vx * 0.5 + (p.x - hand.x) * 30; hand.vy = hand.vy * 0.5 + (p.y - hand.y) * 30; hand.moved += Math.hypot(p.x - hand.x, p.y - hand.y); }
+    hand.x = p.x; hand.y = p.y; hand.active = true;
+  }
+  function onUp(ev) {
+    if (hand.down && hand.moved < 10 && performance.now() - hand.downAt < 400) burst(hand.downX, hand.downY); // a tap
+    hand.down = false;
+    if (ev.pointerType !== "mouse") hand.active = false; // a lifted finger is gone; a mouse stays
+  }
+  function onLeave() { hand.active = false; hand.down = false; }
+  const listeners = [["pointerdown", onDown], ["pointermove", onMove], ["pointerup", onUp], ["pointercancel", onUp], ["pointerleave", onLeave]];
 
-        // Canvas setup
-        this.canvas = document.createElement("canvas");
-        this.canvas.style.position = "absolute";
-        this.canvas.style.top = "0";
-        this.canvas.style.left = "0";
-        this.canvas.style.width = "100%";
-        this.canvas.style.height = "100%";
-        this.canvas.style.pointerEvents = "none";
-        this.ctx = this.canvas.getContext("2d");
-
-        // Temporary canvas for image processing
-        this.tempCanvas = document.createElement("canvas");
-        this.tempCtx = this.tempCanvas.getContext("2d");
-
-        // Particle system setup
-        this.particles = [];
-        this.dispersionRadius = 50;
-        this.mouseRadius = 50;
-        this.mousePos = { x: -1000, y: -1000 };
-
-        // Add canvas to container
-        this.container.appendChild(this.canvas);
-
-        // Event listeners
-        this.container.addEventListener(
-            "mousemove",
-            this.onMouseMove.bind(this),
-        );
-        // FREEAGENT: a finger disperses the stars like the mouse does on the site
-        this.container.addEventListener("touchstart", this.onTouch.bind(this), { passive: true });
-        this.container.addEventListener("touchmove", this.onTouch.bind(this), { passive: true });
-        this.container.addEventListener("touchend", this.onMouseLeave.bind(this), { passive: true });
-        this.container.addEventListener(
-            "mouseleave",
-            this.onMouseLeave.bind(this),
-        );
-        window.addEventListener(
-            "resize",
-            this.onWindowResize.bind(this),
-        );
-
-        // Initial resize
-        this.onWindowResize();
-
-        // Start animation
-        this.animate();
-    }
-
-    loadImage(imageUrl) {
-        return new Promise((resolve, reject) => {
-            const image = new Image();
-            image.crossOrigin = "anonymous";
-            image.onload = () => {
-                const rect = this.container.getBoundingClientRect();
-                const scale = Math.min(
-                    (rect.width * 1) / image.width,
-                    (rect.height * 1) / image.height,
-                );
-
-                // FREEAGENT: repeat the fitted image down the screen so a portrait phone is covered,
-                // not banded; every other row is mirrored so the repeat does not read as a pattern.
-                const tileW = Math.round(image.width * scale);
-                const tileH = Math.round(image.height * scale);
-                const rows = Math.max(1, Math.ceil(rect.height / tileH));
-                this.tempCanvas.width = tileW;
-                this.tempCanvas.height = tileH * rows;
-                for (let r = 0; r < rows; r += 1) {
-                    this.tempCtx.save();
-                    if (r % 2 === 1) { this.tempCtx.translate(tileW, 0); this.tempCtx.scale(-1, 1); }
-                    this.tempCtx.drawImage(image, 0, r * tileH, tileW, tileH);
-                    this.tempCtx.restore();
-                }
-
-                const x = (rect.width - this.tempCanvas.width) / 2;
-                const y = (rect.height - this.tempCanvas.height) / 2;
-                this.convertToParticles(x, y);
-                resolve();
-            };
-            image.onerror = reject;
-            image.src = imageUrl;
-        });
-    }
-
-    convertToParticles(offsetX, offsetY) {
-        const imageData = this.tempCtx.getImageData(
-            0,
-            0,
-            this.tempCanvas.width,
-            this.tempCanvas.height,
-        );
-        const pixels = imageData.data;
-        const width = this.tempCanvas.width;
-        const height = this.tempCanvas.height;
-
-        const bayerMatrix = [
-            [0.0 / 16.0, 8.0 / 16.0, 2.0 / 16.0, 10.0 / 16.0],
-            [12.0 / 16.0, 4.0 / 16.0, 14.0 / 16.0, 6.0 / 16.0],
-            [3.0 / 16.0, 11.0 / 16.0, 1.0 / 16.0, 9.0 / 16.0],
-            [15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0, 5.0 / 16.0],
-        ];
-
-        const stepSize = 2;
-        this.particles = [];
-
-        for (let x = 0; x < width; x += stepSize) {
-            for (let y = 0; y < height; y += stepSize) {
-                const i = (y * width + x) * 4;
-                const r = pixels[i];
-                const g = pixels[i + 1];
-                const b = pixels[i + 2];
-                const a = pixels[i + 3];
-
-                if (a < 128) continue;
-
-                const luminance =
-                    (r * 0.299 + g * 0.587 + b * 0.114) / 255;
-
-                if (luminance > 0.05) {
-                    const bayerX = Math.floor(x / stepSize) % 4;
-                    const bayerY = Math.floor(y / stepSize) % 4;
-                    const bayerValue = bayerMatrix[bayerY][bayerX];
-
-                    const normalizedLuminance = Math.pow(
-                        luminance,
-                        0.8,
-                    );
-                    const shouldCreateParticle =
-                        normalizedLuminance > bayerValue;
-
-                    if (shouldCreateParticle) {
-                        const isWhite =
-                            luminance >
-                            0.5 + (bayerValue - 0.5) * 0.5;
-                        if (isWhite || bayerValue > 0.3) {
-                            const particle = new Particle(
-                                x + offsetX,
-                                y + offsetY,
-                                isWhite,
-                                bayerX,
-                                bayerY,
-                            );
-                            particle.canvas = this.canvas;
-                            particle.colors = this.colors;
-                            this.particles.push(particle);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    onMouseMove(event) {
-        this.dispersionRadius = this.mouseRadius;
-        const rect = this.container.getBoundingClientRect();
-        this.mousePos.x = event.clientX - rect.left;
-        this.mousePos.y = event.clientY - rect.top;
-    }
-
-    // FREEAGENT: touch → the same mouse position the effect already reads
-    onTouch(event) {
-        const touch = event.touches[0];
-        if (!touch) return;
-        const rect = this.container.getBoundingClientRect();
-        this.mousePos.x = touch.clientX - rect.left;
-        this.mousePos.y = touch.clientY - rect.top;
-        this.dispersionRadius = this.touchRadius;
-    }
-
-    onMouseLeave() {
-        this.mousePos.x = -1000;
-        this.mousePos.y = -1000;
-    }
-
-    onWindowResize() {
-        const rect = this.container.getBoundingClientRect();
-        this.canvas.width = rect.width;
-        this.canvas.height = rect.height;
-    }
-
-    // FREEAGENT: the sign-in screen hides once signed in; stop drawing then
-    stop() { this.stopped = true; }
-
-    animate() {
-        if (this.stopped) return;
-        requestAnimationFrame(this.animate.bind(this));
-        this.ctx.clearRect(
-            0,
-            0,
-            this.canvas.width,
-            this.canvas.height,
-        );
-
-        for (const particle of this.particles) {
-            particle.update(
-                this.mousePos.x,
-                this.mousePos.y,
-                this.dispersionRadius,
-            );
-            particle.draw(this.ctx);
-        }
-    }
-}
-
-// FREEAGENT: started by app.js when the sign-in screen is shown (the site starts it on DOMContentLoaded)
-window.CosmicStars = {
-    effect: null,
-    async start(selector, options) {
-        if (this.effect) return;
-        this.effect = new DitheredPixelEffect(selector, options);
-        try {
-            await this.effect.loadImage("images/allstars.png");
-        } catch (error) {
-            console.error("Failed to load image:", error);
-        }
+  window.Sky = {
+    start(el) {
+      if (canvas === el && running) return;
+      this.stop();
+      canvas = el; ctx = canvas.getContext("2d", { alpha: true });
+      buildSprites(); resize();
+      for (const [type, fn] of listeners) canvas.addEventListener(type, fn, { passive: true });
+      ro = new ResizeObserver(resize); ro.observe(canvas);
+      if (reduced) return;
+      running = true; last = performance.now(); raf = requestAnimationFrame(frame);
     },
     stop() {
-        if (!this.effect) return;
-        this.effect.stop();
-        this.effect.canvas.remove();
-        this.effect = null;
+      running = false; cancelAnimationFrame(raf);
+      if (!canvas) return;
+      for (const [type, fn] of listeners) canvas.removeEventListener(type, fn);
+      ro?.disconnect(); ro = null;
     },
-};
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (!canvas) return;
+    if (document.hidden) { running = false; cancelAnimationFrame(raf); }
+    else if (!reduced && !canvas.closest("[hidden]")) { running = true; last = performance.now(); raf = requestAnimationFrame(frame); }
+  });
+})();

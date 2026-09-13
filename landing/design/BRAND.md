@@ -54,15 +54,16 @@ touch input, a `stop()`, and a manual `start()`; see the `FREEAGENT` markers.
 
 ## What freeagent takes and what it does not (Paul, 2026-09-13)
 
-- **Colour:** lime `#baff00` is the accent everywhere — primary buttons (lime on black), the avatar,
-  the New box tile, Running, the active segment, the text caret. The ground is the app's own dark
-  `oklch(0.17 0.012 260)`, not the site's gray: the sign-in screen and the signed-in screen share it.
-- **Type:** IBM Plex Sans throughout, the face the app already uses. The pixel face (PP Neue Bit)
-  and Monument Grotesk are **not** used on freeagent.
-- **Header:** the sign-in screen uses the same top bar as the app ("freeagent" top-left), so the
-  wordmark appears once and looks the same before and after sign-in.
-- **Stars:** the site's `DitheredPixelEffect`, reused whole, drawn in lime on the dark ground with a
-  faint gray for the dark pixels. On a phone the stars image is repeated down the screen so the
-  whole surface answers a finger; touch reach is 90px against the cursor's 50px.
-- **Not used:** `bg_website.png`, the lockup, any link to cosmiclabs.org. Favicons are the Cosmic
-  Labs star icons.
+- **Colour:** dark only — the app's ground `oklch(0.17 0.012 260)` on every device (a light scheme
+  once made desktops gray). Lime `#baff00` is the accent: the **free** in freeagent, the avatar, the
+  New box tile, Running, the active segment, the caret, primary buttons in the app. The GitHub
+  sign-in button is deliberately neutral (white on the ground) so the lime stays an accent there.
+- **Type:** IBM Plex Sans throughout. PP Neue Bit and Monument Grotesk are **not** used.
+- **Header:** the sign-in screen uses the app's own top bar, so the wordmark appears once, identical.
+- **Sky (`public/stars.js`):** freeagent's own, not the site's dither script (which broke on
+  phones). Stars in three depths that drift and twinkle; a finger stirs them along and heats the
+  touched ones lime, which cool back to white; a tap sends nearby stars streaking out; the field
+  leans toward the hand for depth. Typed arrays, one canvas, additive sprites, pixel ratio ≤1.5.
+- **Copy:** one line on what the app is, one sentence under it. Nothing else on the screen.
+- **Not used:** `allstars.png`, `bg_website.png`, the lockup, any link to cosmiclabs.org. Favicons
+  are the Cosmic Labs star icons.
