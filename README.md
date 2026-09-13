@@ -110,8 +110,8 @@ as a secret before the first boot and mount a volume at `/data`.
 | `FREEAGENT_REPO` | — | `owner/name` to clone at boot; `GITHUB_TOKEN` alongside it for a private repository. |
 | `FREEAGENT_TEMPLATE` | — | `1` serves the template notice and starts nothing. |
 
-Build args pin versions: `HERDR_VERSION` (+ sha256s), `COLLIE_REF`, `BUN_VERSION`,
-`CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`.
+Build args pin versions: `HERDR_VERSION` (+ sha256s), `OPENCODE_VERSION` (+ sha256s), `COLLIE_REF`,
+`BUN_VERSION`, `CLAUDE_CODE_VERSION`, `CODEX_VERSION`.
 
 ## Read this before you deploy
 

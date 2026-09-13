@@ -59,21 +59,33 @@ RUN set -eu; \
 
 # --- coding agents -----------------------------------------------------------------------
 # Claude Code and Codex from npm (the node image already has npm; deterministic and offline-cacheable).
-# OpenCode via its installer, moved onto the shared PATH — same recipe as opencode-cloud.
-# Pin any of them with --build-arg; empty means latest.
+# OpenCode as a pinned release tarball with a checksum, like herdr. NOT via its installer: that
+# script asks api.github.com for "latest" at build time, and on a Codespaces build host that call
+# is rate-limited or refused ("Failed to fetch version information"), which failed the whole image
+# build and left the codespace in a recovery container with nothing on port 7860 (2026-09-13).
+# Bump: new version + the sha256 of opencode-linux-x64.tar.gz and opencode-linux-arm64.tar.gz from
+# https://github.com/anomalyco/opencode/releases.
 ARG CLAUDE_CODE_VERSION=""
 ARG CODEX_VERSION=""
-ARG OPENCODE_VERSION=""
+ARG OPENCODE_VERSION=1.18.30
+ARG OPENCODE_SHA256_X64=55007246858165496ff85ba1c2b648f7421e8e2013bf4189a680c9ff8e699d17
+ARG OPENCODE_SHA256_ARM64=4111a55c2a02c0fac314bd51e9a2330280e6d29d2b85b9554fff6d62612566ed
 RUN npm install -g \
       "@anthropic-ai/claude-code${CLAUDE_CODE_VERSION:+@$CLAUDE_CODE_VERSION}" \
       "@openai/codex${CODEX_VERSION:+@$CODEX_VERSION}" \
     && npm cache clean --force \
     && claude --version && codex --version
-RUN VERSION="${OPENCODE_VERSION}" bash -c 'curl -fsSL https://opencode.ai/install | bash' \
-    && mv "$HOME/.opencode/bin/opencode" /usr/local/bin/opencode \
-    && chmod 755 /usr/local/bin/opencode \
-    && rm -rf "$HOME/.opencode" \
-    && opencode --version
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) target=linux-x64;   sum="$OPENCODE_SHA256_X64" ;; \
+      arm64) target=linux-arm64; sum="$OPENCODE_SHA256_ARM64" ;; \
+      *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/opencode.tgz "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-${target}.tar.gz"; \
+    echo "${sum}  /tmp/opencode.tgz" | sha256sum -c -; \
+    tar -xzf /tmp/opencode.tgz -C /usr/local/bin opencode; \
+    chmod 755 /usr/local/bin/opencode; rm -f /tmp/opencode.tgz; \
+    opencode --version
 
 # --- collie ------------------------------------------------------------------------------
 # A tagged checkout with the web bundle prebuilt. The bridge serves web/dist from disk and has no
