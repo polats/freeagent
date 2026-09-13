@@ -44,6 +44,22 @@ const user = {}; // provider -> username
 let boxes = [];
 let busy = {}; // box id -> note shown on the card
 let pollTimer = null;
+let fastUntil = 0; // poll every second until this time, right after the user creates or deletes
+
+// The providers' LIST endpoints lag: a deleted codespace stays listed for a while, a new one is
+// missing for a while. So the page keeps its own word on what the user just did, for a few minutes:
+//   ghosts     — boxes just created, shown at once and reconciled by their own single-item GET,
+//                which is consistent immediately, until the list catches up;
+//   tombstones — boxes just deleted, hidden even if the list still returns them.
+const RECENT_MS = 5 * 60 * 1000;
+const recent = (key) => { const m = JSON.parse(LS.get(key) ?? "{}"); const now = Date.now(); for (const k of Object.keys(m)) if (now - (m[k].at ?? m[k]) > RECENT_MS) delete m[k]; return m; };
+const ghosts = () => recent("freeagent:ghosts");
+const tombstones = () => recent("freeagent:tombstones");
+const addGhost = (b) => { const m = ghosts(); m[b.id] = { ...b, at: Date.now() }; LS.set("freeagent:ghosts", JSON.stringify(m)); };
+const dropGhost = (id) => { const m = ghosts(); delete m[id]; LS.set("freeagent:ghosts", JSON.stringify(m)); };
+const addTombstone = (id) => { const m = tombstones(); m[id] = Date.now(); LS.set("freeagent:tombstones", JSON.stringify(m)); };
+const dropTombstone = (id) => { const m = tombstones(); delete m[id]; LS.set("freeagent:tombstones", JSON.stringify(m)); };
+const pollFast = () => { fastUntil = Date.now() + 12000; };
 let openMenu = null;
 
 // ---- Toast -------------------------------------------------------------------------------------------
@@ -200,28 +216,58 @@ function classify(p, raw) {
   return ["pending", raw ?? "Unknown"];
 }
 
+function codespaceBox(c) {
+  const [kind, label] = classify("github", c.state);
+  return { p: "github", id: c.name, name: c.display_name || c.name, kind, label, raw: c.state, url: codespaceUrl(c.name), created: c.created_at, ...boxMeta(c.name) };
+}
+function spaceBox(id, createdAt, stage) {
+  const [kind, label] = classify("hf", stage);
+  return { p: "hf", id, name: id.split("/")[1], kind, label, raw: stage, url: spaceUrl(id), created: createdAt, ...boxMeta(id) };
+}
+
 async function loadBoxes() {
   const found = [];
   const jobs = [];
   if (user.github) jobs.push(api("github", "/user/codespaces?per_page=100").then(({ codespaces = [] }) => {
     for (const c of codespaces) {
       if (c.repository.full_name.toLowerCase() !== CFG.TEMPLATE_REPO.toLowerCase()) continue;
-      const [kind, label] = classify("github", c.state);
-      found.push({ p: "github", id: c.name, name: c.display_name || c.name, kind, label, raw: c.state, url: codespaceUrl(c.name), created: c.created_at, ...boxMeta(c.name) });
+      found.push(codespaceBox(c));
     }
   }));
   if (user.hf) jobs.push(api("hf", `/api/spaces?author=${encodeURIComponent(user.hf)}&full=true&limit=100`).then(async (spaces) => {
     const mine = spaces.filter((s) => s.sdk === "docker" && s.id !== CFG.TEMPLATE_SPACE && /freeagent/i.test(s.cardData?.title ?? ""));
     await Promise.all(mine.map(async (s) => {
       const rt = await api("hf", `/api/spaces/${s.id}/runtime`).catch(() => null);
-      const [kind, label] = classify("hf", rt?.stage);
-      found.push({ p: "hf", id: s.id, name: s.id.split("/")[1], kind, label, raw: rt?.stage, url: spaceUrl(s.id), created: s.createdAt, ...boxMeta(s.id) });
+      found.push(spaceBox(s.id, s.createdAt, rt?.stage));
     }));
   }));
   await Promise.all(jobs);
+
+  // Deleted here, still listed there: hide it. Gone from the list: the provider caught up, forget it.
+  const dead = tombstones();
+  const listed = new Set(found.map((b) => b.id));
+  for (const id of Object.keys(dead)) if (!listed.has(id)) dropTombstone(id);
+  const kept = found.filter((b) => !dead[b.id]);
+
+  // Created here, not listed yet: show it, and ask about it by name — that answer is current.
+  const ghost = ghosts();
+  await Promise.all(Object.values(ghost).map(async (g) => {
+    if (listed.has(g.id)) { dropGhost(g.id); return; }
+    if (!user[g.p]) return;
+    try {
+      const live = g.p === "github"
+        ? codespaceBox(await api("github", `/user/codespaces/${g.id}`))
+        : spaceBox(g.id, g.created, (await api("hf", `/api/spaces/${g.id}/runtime`))?.stage);
+      kept.push(live);
+    } catch (e) {
+      if (e.status === 404 && Date.now() - g.at > 60000) dropGhost(g.id); // never materialised
+      else kept.push({ ...g, kind: "pending", label: "Provisioning" });
+    }
+  }));
+
   // Pending first, then newest.
-  found.sort((a, b) => (a.kind === "pending") === (b.kind === "pending") ? (b.created ?? "").localeCompare(a.created ?? "") : (a.kind === "pending" ? -1 : 1));
-  boxes = found;
+  kept.sort((a, b) => (a.kind === "pending") === (b.kind === "pending") ? (b.created ?? "").localeCompare(a.created ?? "") : (a.kind === "pending" ? -1 : 1));
+  boxes = kept;
 }
 
 function renderCards() {
@@ -331,14 +377,18 @@ function confirmDelete(b) {
   $("confirm-text").textContent = `${b.name} and everything on it will be destroyed on the provider. This cannot be undone.`;
   $("confirm-ok").onclick = async () => {
     $("confirm").close();
-    setBusy(b.id, "Deleting…");
+    // The tile goes now; the provider hears about it next. If it refuses, the tile comes back.
+    addTombstone(b.id); dropGhost(b.id);
+    boxes = boxes.filter((x) => x.id !== b.id); renderCards(); renderAccounts();
     try {
       if (b.p === "github") await api("github", `/user/codespaces/${b.id}`, { method: "DELETE" });
       else await api("hf", "/api/repos/delete", { method: "DELETE", body: JSON.stringify({ type: "space", name: b.name }) });
       LS.del(`freeagent:box:${b.id}`);
       toast(`Deleted ${b.name}`);
-    } catch (e) { toast(e.message); showError(e.message); }
-    setBusy(b.id, null);
+    } catch (e) {
+      if (e.status !== 404) { dropTombstone(b.id); toast(e.message); showError(e.message); }
+    }
+    pollFast();
     await refresh();
   };
   $("confirm").showModal();
@@ -431,9 +481,12 @@ async function submitCreate(ev) {
   if (!NAME_RE.test(name)) { $("create-error").textContent = "Use only letters, numbers and hyphens"; return; }
   $("create-submit").disabled = true; $("create-error").textContent = "";
   try {
-    const id = p === "github" ? await createCodespace(name) : await createSpace(name);
-    if (pickedRepo) setBoxMeta(id, { repo: pickedRepo, priv: repoIsPrivate(pickedRepo) });
+    const box = p === "github" ? await createCodespace(name) : await createSpace(name);
+    if (pickedRepo) setBoxMeta(box.id, { repo: pickedRepo, priv: repoIsPrivate(pickedRepo) });
+    addGhost({ ...box, ...boxMeta(box.id) });
     $("create").close();
+    boxes = [{ ...box, ...boxMeta(box.id) }, ...boxes.filter((x) => x.id !== box.id)]; renderCards();
+    pollFast();
     await refresh();
   } catch (e) {
     $("create-error").textContent = e.message || "Could not create the box";
@@ -447,7 +500,7 @@ async function createCodespace(name) {
     method: "POST",
     body: JSON.stringify({ repository_id: repo.id, ref: repo.default_branch, machine: $("create-machine").value, display_name: name, idle_timeout_minutes: CFG.CODESPACE_IDLE_MINUTES, devcontainer_path: ".devcontainer/devcontainer.json" }),
   });
-  return cs.name;
+  return codespaceBox(cs);
 }
 
 async function createSpace(name) {
@@ -472,7 +525,7 @@ async function createSpace(name) {
     throw e;
   }
   setBoxMeta(id, { token: collieToken });
-  return id;
+  return spaceBox(id, new Date().toISOString(), "BUILDING");
 }
 
 // ---- Accounts ---------------------------------------------------------------------------------------------------
@@ -505,7 +558,8 @@ async function refresh() {
 function schedulePoll() {
   clearTimeout(pollTimer);
   const pending = boxes.some((b) => b.kind === "pending") || Object.keys(busy).length > 0;
-  pollTimer = setTimeout(() => { if (!document.hidden) refresh(); else schedulePoll(); }, pending ? 4000 : 30000);
+  const delay = Date.now() < fastUntil ? 1000 : pending ? 4000 : 30000;
+  pollTimer = setTimeout(() => { if (!document.hidden) refresh(); else schedulePoll(); }, delay);
 }
 
 async function render() {
