@@ -17,7 +17,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
   radial-gradient(60% 45% at 8% 100%,color-mix(in oklch,var(--lime) 14%,transparent),transparent 70%),
   radial-gradient(55% 50% at 100% 0%,oklch(0.36 0.09 290 / 45%),transparent 70%),
   linear-gradient(180deg,oklch(0.2 0.015 260),var(--bg) 40%,oklch(0.15 0.012 260))}
-body{margin:0;min-height:100dvh;background:var(--bg);color:var(--fg);font:15px/1.4 "IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+body{margin:0;min-height:100dvh;background:transparent;color:var(--fg);font:15px/1.4 "IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none;padding:0}
 [hidden]{display:none!important}
