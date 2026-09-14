@@ -29,6 +29,10 @@ else
   echo "codespaces: no secrets file at $SECRETS"
 fi
 
+# Answer on GitHub's tunnel-id address too (see entrypoint.sh, "public host"); set here as well as in
+# the image so a codespace that only pulled main, without a rebuild, gets it on its next start.
+export FREEAGENT_ALLOW_ANY_HOST=1
+
 # entrypoint.sh only uses the state root if it already exists and is writable.
 mkdir -p "${FREEAGENT_STATE_ROOT:-/workspaces/.freeagent-state}" 2>/dev/null || true
 

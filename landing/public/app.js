@@ -309,6 +309,7 @@ function openBoxMenu(b) {
   const items = $("box-menu-items"); items.textContent = "";
   const add = (text, fn, cls = "") => { const btn = document.createElement("button"); btn.textContent = text; btn.className = cls; btn.onclick = () => { $("box-menu").close(); fn(); }; items.appendChild(btn); };
   add("Copy address", () => navigator.clipboard?.writeText(b.url).then(() => toast("Address copied")));
+  if (b.p === "github" && b.kind === "running") add("Open via tunnel address", () => tunnelUrl(b).then((u) => { const t = window.open(handoffUrl(b, u), "_blank"); if (t) t.opener = null; }).catch((e) => toast(e.message)));
   if (b.p === "hf" && b.token) add("Copy Collie token", () => navigator.clipboard?.writeText(b.token).then(() => toast("Token copied")));
   add("Delete", () => confirmDelete(b), "danger");
   $("box-menu").showModal();
@@ -316,6 +317,30 @@ function openBoxMenu(b) {
 
 function setBusy(id, note) { if (note === null) delete busy[id]; else busy[id] = note; renderCards(); }
 function showError(text) { $("list-error").textContent = text; }
+
+// GitHub reaches a codespace port on two hostnames: the named one, <codespace>-7860.app.github.dev,
+// and the tunnel's own, <tunnel-id>-7860.<cluster>.devtunnels.ms, whose id changes on every start.
+// The named one can stop routing (2026-09-14: an empty 404 from GitHub's edge for hours while the
+// tunnel itself was fine — on a phone that 404 downloads a zero-byte file). A browser cannot see the
+// difference cross-origin, so the Pages Function probes it; when it is not routing, the box opens on
+// the tunnel address instead, which the image accepts (FREEAGENT_ALLOW_ANY_HOST in the devcontainer).
+async function codespaceAddress(b) {
+  const named = new URL(b.url).host;
+  const probe = await fetch(`/api/probe?host=${encodeURIComponent(named)}`).then((r) => r.json()).catch(() => null);
+  if (!probe || probe.routing) return b.url;
+  const tunnel = await tunnelUrl(b).catch(() => null);
+  if (!tunnel) return b.url;
+  toast("GitHub's address for this box isn't routing — opening it through its tunnel");
+  return tunnel;
+}
+// The tunnel address comes from the codespace record's connection details (the same call the GitHub
+// CLI makes for `gh codespace ports`), read with the user's own token.
+async function tunnelUrl(b) {
+  const cs = await api("github", `/user/codespaces/${b.id}?internal=true`);
+  const tp = cs.connection?.tunnelProperties;
+  if (!tp?.tunnelId || !tp?.clusterId) throw new Error("no tunnel details");
+  return `https://${tp.tunnelId}-7860.${tp.clusterId}.devtunnels.ms/`;
+}
 
 // Tap a card: wake it if it is stopped, then open it in a NEW tab, so this page — the list of
 // boxes, with each HF box's Collie token — stays put. The tab is opened synchronously, inside the
@@ -334,8 +359,10 @@ async function connect(b) {
     tab?.close(); // a wake that failed leaves no orphan tab behind
     throw e;
   }
+  let base = b.url;
+  if (b.p === "github") { setBusy(b.id, "Checking the address…"); base = await codespaceAddress(b).catch(() => b.url); }
   setBusy(b.id, null);
-  open(handoffUrl(b));
+  open(handoffUrl(b, base));
 }
 
 // Start a stopped codespace and wait until Herdr and Collie are up on it. An HF box wakes itself
@@ -362,7 +389,7 @@ async function wake(b) {
 // has it (boxes created before owners existed, or a box whose owner variable is missing) as the
 // fallback the PWA tries second. A codespace gets its repo to clone, plus the GitHub token when that
 // repo is private. An HF box clones at boot from FREEAGENT_REPO, so it gets no repo here.
-function handoffUrl(b) {
+function handoffUrl(b, base = b.url) {
   const frag = new URLSearchParams();
   if (b.p === "hf") {
     if (tokenOf("github")) frag.set("gh", tokenOf("github"));
@@ -374,7 +401,7 @@ function handoffUrl(b) {
     setBoxMeta(b.id, { cloned: true }); // once is enough; a reload must not clone twice
   }
   const q = frag.toString();
-  return q ? `${b.url}#${q}` : b.url;
+  return q ? `${base}#${q}` : base;
 }
 
 function confirmDelete(b) {
