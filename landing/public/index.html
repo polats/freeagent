@@ -3,8 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>freeagent</title>
-<meta name="description" content="Your coding agents on a box you own, from your phone.">
+<title>freeagent — run coding agents on free cloud spaces, from your phone</title>
+<meta name="description" content="freeagent runs Claude Code, Codex and OpenCode on free GitHub Codespaces or Hugging Face Spaces and lets you start and reply to them from your phone. Open source.">
+<link rel="canonical" href="https://freeagent.cosmiclabs.org/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="freeagent">
+<meta property="og:url" content="https://freeagent.cosmiclabs.org/">
+<meta property="og:title" content="freeagent — vibe from anywhere">
+<meta property="og:description" content="Run your coding agents on free cloud spaces. Start and reply to agents from your phone.">
+<meta property="og:image" content="https://freeagent.cosmiclabs.org/images/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="freeagent: vibe from anywhere. Run your coding agents on free cloud spaces, from your phone.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="freeagent — vibe from anywhere">
+<meta name="twitter:description" content="Run your coding agents on free cloud spaces. Start and reply to agents from your phone.">
+<meta name="twitter:image" content="https://freeagent.cosmiclabs.org/images/og.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"freeagent","url":"https://freeagent.cosmiclabs.org/","applicationCategory":"DeveloperApplication","operatingSystem":"Web","description":"Run Claude Code, Codex and OpenCode on free GitHub Codespaces or Hugging Face Spaces and drive them from your phone.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"isAccessibleForFree":true,"license":"https://github.com/polats/freeagent/blob/main/LICENSE","sameAs":["https://github.com/polats/freeagent"],"author":{"@type":"Organization","name":"Cosmic Labs"}}
+</script>
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#1a1b22">
 <link rel="icon" href="images/favicon-32.png" type="image/png">
@@ -28,6 +45,7 @@
       </div>
       <button class="github" id="signin-github"><svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg><span>Continue with GitHub</span></button>
       <p class="error" id="signed-out-error"></p>
+      <footer class="site-foot"><a href="https://github.com/polats/freeagent" target="_blank" rel="noopener"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg><span>Open source on GitHub</span></a></footer>
     </div>
   </section>
 
@@ -38,6 +56,7 @@
       <div id="cards" class="contents"></div>
       <button class="tile add" id="new-box" aria-label="New box"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M14 5v18M5 14h18" stroke="currentColor" stroke-width="2"></path></svg></button>
     </div>
+    <footer class="site-foot"><a href="https://github.com/polats/freeagent" target="_blank" rel="noopener"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg><span>Open source on GitHub</span></a></footer>
   </section>
 </main>
 

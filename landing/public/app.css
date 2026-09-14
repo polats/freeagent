@@ -51,6 +51,10 @@ body:has(#signed-out:not([hidden])){overscroll-behavior:none}
 @keyframes sheen{0%,55%{transform:translateX(-120%)}85%,100%{transform:translateX(120%)}}
 @media (prefers-reduced-motion:reduce){.github,.github::after{animation:none}}
 #signed-out .error{color:var(--muted);text-align:center}
+.site-foot{display:flex;justify-content:center;padding:14px 0 0}
+.site-foot a{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;color:var(--muted);text-decoration:none;font-size:13px;border-radius:10px}
+.site-foot a:hover,.site-foot a:active{color:var(--fg);background:var(--tile)}
+#boxes-view .site-foot{padding-top:32px}
 
 /* tiles */
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
