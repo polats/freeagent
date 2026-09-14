@@ -14,9 +14,9 @@ html{background:var(--bg)}
 /* The ground is not flat black: a lime glow low on the left, a cool violet one high on the right,
    both faint, fixed to the viewport so tiles and sheets sit on the same light wherever you scroll. */
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:
-  radial-gradient(60% 45% at 8% 100%,color-mix(in oklch,var(--lime) 14%,transparent),transparent 70%),
-  radial-gradient(55% 50% at 100% 0%,oklch(0.36 0.09 290 / 45%),transparent 70%),
-  linear-gradient(180deg,oklch(0.2 0.015 260),var(--bg) 40%,oklch(0.15 0.012 260))}
+  radial-gradient(130% 42% at 50% 100%,color-mix(in oklch,var(--lime) 26%,transparent),color-mix(in oklch,var(--lime) 8%,transparent) 55%,transparent 80%),
+  radial-gradient(130% 42% at 50% 0%,oklch(0.45 0.13 290 / 70%),oklch(0.3 0.06 280 / 30%) 55%,transparent 80%),
+  linear-gradient(180deg,oklch(0.22 0.02 265),var(--bg) 45%,oklch(0.16 0.014 260))}
 body{margin:0;min-height:100dvh;background:transparent;color:var(--fg);font:15px/1.4 "IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none;padding:0}
@@ -52,9 +52,10 @@ body:has(#signed-out:not([hidden])){overscroll-behavior:none}
 @media (prefers-reduced-motion:reduce){.github,.github::after{animation:none}}
 #signed-out .error{color:var(--muted);text-align:center}
 .site-foot{display:flex;justify-content:center;padding:14px 0 0}
-.site-foot a{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;color:var(--muted);text-decoration:none;font-size:13px;border-radius:10px}
-.site-foot a:hover,.site-foot a:active{color:var(--fg);background:var(--tile)}
-#boxes-view .site-foot{padding-top:32px}
+.site-foot a{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;color:var(--muted);text-decoration:none;font-size:13px}
+.site-foot a:hover,.site-foot a:active,.site-foot a:focus-visible{color:var(--cosmicgreen);text-decoration:underline;text-underline-offset:3px}
+#boxes-view{display:flex;flex-direction:column;min-height:calc(100dvh - 56px - env(safe-area-inset-top) - 32px - env(safe-area-inset-bottom))}
+#boxes-view .site-foot{margin-top:auto;padding-top:32px}
 
 /* tiles */
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
