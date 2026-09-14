@@ -103,7 +103,9 @@
 
   function layout(look) {
     const r = canvas.getBoundingClientRect();
-    R = Math.min(r.width * 0.38, r.height * 0.23);
+    // On a phone the disc is a little wider than the screen (its rim runs off both edges); on a wide
+    // screen it is held to a comfortable size by the height.
+    R = r.width < 700 ? r.width * 0.58 : Math.min(r.width * 0.36, r.height * 0.3);
     cx = r.width / 2; cy = r.height * 0.4; // above the middle, clear of the copy at the foot
     ({ tilt = 0.66, wind = 4.0, arms = 2, spread = 0.3 } = look);
     rings = BANDS.map((b) => ({ band: b, t: midT(b), img: paint(R, look, DPR, b) }));
@@ -127,19 +129,34 @@
   function frame(now) {
     if (!running) return;
     const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
+    // Belt and braces for the resize observer: every few frames, compare the box the canvas fills
+    // with the size it was laid out for, and refit when they differ. clientWidth is cheap.
+    if ((sizeCheck = (sizeCheck + 1) % 12) === 0 && (Math.abs(canvas.clientWidth - fitW) > 1 || Math.abs(canvas.clientHeight - fitH) > 1)) onResize();
     time += dt; flare = Math.max(0, flare - dt * 1.5);
     draw(); raf = requestAnimationFrame(frame);
   }
+  // Resize: the canvas takes the new pixel size, the disc is laid out and repainted for it, and the
+  // frame is drawn at once so stars.js (which reads state() every frame) sees the new centre
+  // immediately. Debounced: repainting four rings of 16k points is a few dozen milliseconds.
+  let ro = null, resizeTimer = 0, fitW = 0, fitH = 0, sizeCheck = 0;
+  function fit() {
+    const r = canvas.getBoundingClientRect();
+    fitW = Math.round(r.width); fitH = Math.round(r.height);
+    canvas.width = Math.round(fitW * DPR); canvas.height = Math.round(fitH * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    layout(window.Galaxy.look); draw();
+  }
+  function onResize() { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { try { fit(); } catch (e) { console.warn("galaxy: resize failed", e); } }, 120); }
+
   window.Galaxy = {
     look: {},
     start(el, look = {}) {
       this.stop(); canvas = el; ctx = canvas.getContext("2d"); this.look = look;
-      const r = canvas.getBoundingClientRect(); canvas.width = Math.round(r.width * DPR); canvas.height = Math.round(r.height * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      layout(look); draw();
+      fit();
+      ro = new ResizeObserver(onResize); ro.observe(canvas);
       if (reduced) return;
       running = true; last = performance.now(); raf = requestAnimationFrame(frame);
     },
-    stop() { running = false; cancelAnimationFrame(raf); },
+    stop() { running = false; cancelAnimationFrame(raf); ro?.disconnect(); ro = null; clearTimeout(resizeTimer); },
     /** A tap inside the core: a brief flare. Returns true when the point was in the core. */
     tap(x, y) { const dx = x - cx, dy = y - cy; if (dx * dx + dy * dy < (R * 0.35) ** 2) { flare = 1; return true; } return false; },
     center() { return { x: cx, y: cy, R }; },
