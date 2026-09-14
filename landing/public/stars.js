@@ -12,6 +12,9 @@
   let canvas, ctx, w = 0, h = 0, N = 0, raf = 0, running = false, last = 0, ro = null;
   // struct of arrays
   let X, Y, Z, VX, VY, HX, HY, HEAT, PH, TW, PX, PY, LIMEY, OX, OY;
+  // stars that live on the galaxy's arms (galaxy.js): ARM = 1 + arm index (0 = a free star),
+  // ARMT their place along the arm (0 core → 1 rim), ARMO their offset off the arm's spine
+  let ARM, ARMT, ARMO;
   // short-lived things: sparks thrown by the hand, shockwave rings from a tap, the comet trail
   const SPARKS = 320; const sx = new Float32Array(SPARKS), sy = new Float32Array(SPARKS), svx = new Float32Array(SPARKS), svy = new Float32Array(SPARKS), sl = new Float32Array(SPARKS), ss = new Float32Array(SPARKS); let sparkNext = 0;
   const rings = []; const trail = [];
@@ -39,6 +42,8 @@
     X = new Float32Array(N); Y = new Float32Array(N); Z = new Float32Array(N);
     VX = new Float32Array(N); VY = new Float32Array(N); HX = new Float32Array(N); HY = new Float32Array(N);
     HEAT = new Float32Array(N); PH = new Float32Array(N); TW = new Float32Array(N); PX = new Float32Array(N); PY = new Float32Array(N); LIMEY = new Float32Array(N); OX = new Float32Array(N); OY = new Float32Array(N);
+    ARM = new Uint8Array(N); ARMT = new Float32Array(N); ARMO = new Float32Array(N);
+    const gal = window.Galaxy?.state?.();
     for (let i = 0; i < N; i += 1) {
       X[i] = PX[i] = OX[i] = Math.random() * w; Y[i] = PY[i] = OY[i] = Math.random() * h;
       Z[i] = 0.25 + Math.random() ** 2 * 0.75;              // most stars far and small
@@ -46,8 +51,26 @@
       HX[i] = Math.cos(a) * sp; HY[i] = Math.sin(a) * sp;
       PH[i] = Math.random() * Math.PI * 2; TW[i] = 0.5 + Math.random() * 1.5;
       LIMEY[i] = Math.random() < 0.34 ? 0.55 + Math.random() * 0.45 : 0; // a third of the sky is lime at rest
+      // two in five stars sit on the galaxy's arms when there is one: brighter, limer, and their home
+      // turns with the disc, so the galaxy itself stirs, heats and bursts under the hand
+      if (gal && Math.random() < 0.4) {
+        ARM[i] = 1 + Math.floor(Math.random() * gal.arms); ARMT[i] = Math.pow(Math.random(), 0.6);
+        ARMO[i] = (Math.random() + Math.random() + Math.random() - 1.5) * gal.spread * (0.5 + 1.3 * ARMT[i]);
+        Z[i] = 0.35 + Math.random() * 0.55; LIMEY[i] = 0.5 + Math.random() * 0.5;
+        armHome(i, gal); X[i] = PX[i] = OX[i]; Y[i] = PY[i] = OY[i];
+      }
     }
     sl.fill(0); rings.length = 0; trail.length = 0;
+  }
+
+  // A star's home on the arm, in screen space, for the disc as it is right now.
+  function armHome(i, gal) {
+    const a = ARMT[i] * gal.wind + ((ARM[i] - 1) / gal.arms) * Math.PI * 2 + ARMO[i];
+    const r = (0.04 + ARMT[i] * 0.96) * gal.R;
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    const ang = gal.spin(ARMT[i]); // the arm turns at its own radius's speed, like the painted disc
+    const c = Math.cos(ang), s = Math.sin(ang);
+    OX[i] = gal.cx + x * c - y * s; OY[i] = gal.cy + (x * s + y * c) * gal.tilt; // spin, then the tilt
   }
 
   function resize() {
@@ -66,13 +89,18 @@
     const tx = hand.active ? ((hand.x - w / 2) / w) * 26 : 0, ty = hand.active ? ((hand.y - h / 2) / h) * 26 : 0;
     lean.x += (tx - lean.x) * Math.min(1, dt * 3); lean.y += (ty - lean.y) * Math.min(1, dt * 3);
     const hvx = hand.vx, hvy = hand.vy, hspeed = Math.hypot(hvx, hvy);
+    const gal = window.Galaxy?.state?.();
     for (let i = 0; i < N; i += 1) {
       PX[i] = X[i]; PY[i] = Y[i];
-      // the home drifts slowly and wraps; the star is a damped spring on it, so whatever the hand
-      // does, the star is back within a second or so and the sky never goes dark around the finger
-      OX[i] += HX[i] * dt; OY[i] += HY[i] * dt;
-      if (OX[i] < -20) { OX[i] += w + 40; X[i] += w + 40; PX[i] = X[i]; } else if (OX[i] > w + 20) { OX[i] -= w + 40; X[i] -= w + 40; PX[i] = X[i]; }
-      if (OY[i] < -20) { OY[i] += h + 40; Y[i] += h + 40; PY[i] = Y[i]; } else if (OY[i] > h + 20) { OY[i] -= h + 40; Y[i] -= h + 40; PY[i] = Y[i]; }
+      if (ARM[i] && gal) {
+        armHome(i, gal); // the arm turns with the disc; the star springs after it
+      } else {
+        // the home drifts slowly and wraps; the star is a damped spring on it, so whatever the hand
+        // does, the star is back within a second or so and the sky never goes dark around the finger
+        OX[i] += HX[i] * dt; OY[i] += HY[i] * dt;
+        if (OX[i] < -20) { OX[i] += w + 40; X[i] += w + 40; PX[i] = X[i]; } else if (OX[i] > w + 20) { OX[i] -= w + 40; X[i] -= w + 40; PX[i] = X[i]; }
+        if (OY[i] < -20) { OY[i] += h + 40; Y[i] += h + 40; PY[i] = Y[i]; } else if (OY[i] > h + 20) { OY[i] -= h + 40; Y[i] -= h + 40; PY[i] = Y[i]; }
+      }
       let ax = (OX[i] - X[i]) * 4 - VX[i] * 2.2, ay = (OY[i] - Y[i]) * 4 - VY[i] * 2.2;
       if (hand.active) {
         const dx = X[i] - hand.x, dy = Y[i] - hand.y, d2 = dx * dx + dy * dy;
@@ -110,6 +138,7 @@
   }
 
   function burst(x, y) {
+    window.Galaxy?.tap?.(x, y); // inside the core, the core flares too
     rings.push({ x, y, r: 6, life: 1 });
     for (let k = 0; k < 44; k += 1) { const a = Math.random() * Math.PI * 2, v = 160 + Math.random() * 420; spark(x, y, Math.cos(a) * v, Math.sin(a) * v, 1.5 + Math.random() * 2.5); }
     for (let i = 0; i < N; i += 1) {

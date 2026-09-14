@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>galaxy harness</title>
+<!-- Galaxy disc alone, on the app's ground. ?look=tight | open picks a prototype. -->
+<style>html,body{margin:0;height:100%;background:oklch(0.17 0.012 260);overflow:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(130% 42% at 50% 100%,color-mix(in oklch,#baff00 26%,transparent),color-mix(in oklch,#baff00 8%,transparent) 55%,transparent 80%),radial-gradient(130% 42% at 50% 0%,oklch(0.45 0.13 290 / 70%),oklch(0.3 0.06 280 / 30%) 55%,transparent 80%)}
+#galaxy{position:fixed;inset:0;width:100%;height:100%}
+.copy{position:fixed;left:20px;right:20px;bottom:30px;color:#eee;font:600 26px/1.2 system-ui}.copy em{color:#baff00;font-style:normal}.copy p{font:15px/1.4 system-ui;color:#9aa;margin:8px 0 0}</style>
+<canvas id="galaxy"></canvas>
+<div class="copy">vibe from <em>anywhere</em><p>Run your coding agents on <em>free</em> cloud spaces. Start and reply to agents from your <em>phone</em>.</p></div>
+<script src="../public/galaxy.js"></script>
+<script>
+  const looks = { tight: { arms: 2, wind: 6.0, spread: 0.22, tilt: 0.58 }, open: { arms: 2, wind: 4.0, spread: 0.3, tilt: 0.66 } };
+  const k = new URLSearchParams(location.search).get("look") || "tight";
+  window.Galaxy.start(document.getElementById("galaxy"), looks[k]);
+</script>

@@ -577,8 +577,8 @@ async function render() {
   $("signed-out").hidden = signedIn;
   $("boxes-view").hidden = !signedIn;
   $("new-box").hidden = !signedIn;
-  if (!signedIn) { clearTimeout(pollTimer); window.Sky?.start($("stars")); startTrails(); return; }
-  window.Sky?.stop(); window.Trails?.stop();
+  if (!signedIn) { clearTimeout(pollTimer); window.Galaxy?.start($("galaxy")); window.Sky?.start($("stars")); startTrails(); return; }
+  window.Galaxy?.stop(); window.Sky?.stop(); window.Trails?.stop();
   if (boxes.length === 0 && !$("cards").hasChildNodes()) $("skeleton").hidden = false;
   await refresh();
   $("skeleton").hidden = true;
@@ -586,7 +586,7 @@ async function render() {
 
 async function main() {
   await Promise.all(PROVIDERS.map(detect));
-  if (!config.github) { $("signed-out").hidden = false; window.Sky?.start($("stars")); startTrails(); $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
+  if (!config.github) { $("signed-out").hidden = false; window.Galaxy?.start($("galaxy")); window.Sky?.start($("stars")); startTrails(); $("signed-out-error").textContent = "GitHub sign-in is not configured on this deployment."; return; }
 
   $("signin-github").onclick = () => signIn("github");
   $("new-box").onclick = openCreate;

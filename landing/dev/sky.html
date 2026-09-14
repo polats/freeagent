@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>sky harness</title>
+<!-- The full sign-in sky: galaxy under, stars, brush on top. Serve landing/ and open /dev/sky.html. -->
+<style>html,body{margin:0;height:100%;background:oklch(0.17 0.012 260);overflow:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(130% 42% at 50% 100%,color-mix(in oklch,#baff00 26%,transparent),color-mix(in oklch,#baff00 8%,transparent) 55%,transparent 80%),radial-gradient(130% 42% at 50% 0%,oklch(0.45 0.13 290 / 70%),oklch(0.3 0.06 280 / 30%) 55%,transparent 80%)}
+#wrap{position:fixed;inset:0;touch-action:none}
+#galaxy,#stars,#trails{position:absolute;inset:0;width:100%;height:100%}#galaxy,#trails{pointer-events:none}#stars{touch-action:none}
+.copy{position:fixed;left:20px;right:20px;bottom:30px;color:#eee;font:600 26px/1.2 system-ui;pointer-events:none}.copy em{color:#baff00;font-style:normal}.copy p{font:15px/1.4 system-ui;color:#9aa;margin:8px 0 0}</style>
+<div id="wrap"><canvas id="galaxy"></canvas><canvas id="stars"></canvas><canvas id="trails"></canvas></div>
+<div class="copy">vibe from <em>anywhere</em><p>Run your coding agents on <em>free</em> cloud spaces. Start and reply to agents from your <em>phone</em>.</p></div>
+<script src="../public/galaxy.js"></script><script src="../public/stars.js"></script>
+<script type="module">import "../public/trails.js"; window.Galaxy.start(document.getElementById("galaxy")); window.Sky.start(document.getElementById("stars")); window.Trails.start(document.getElementById("trails"));</script>
