@@ -35,15 +35,6 @@ if [ -n "$PUBLIC_HOST" ]; then
   export COLLIE_ALLOWED_ORIGINS="https://${PUBLIC_HOST}"
   export COLLIE_PUBLIC_URL="https://${PUBLIC_HOST}"   # lets `collie pair` print a QR for the phone
   log "public host: https://${PUBLIC_HOST}"
-  # A codespace has a second door: GitHub's tunnel address, https://<tunnel-id>-<port>.<cluster>.devtunnels.ms,
-  # whose id changes on every start so it cannot be listed here. The landing page falls back to it when
-  # GitHub's named address stops routing (seen 2026-09-14: the name answered an empty 404 for hours while
-  # the tunnel itself was fine). The port is private to the owner's GitHub account either way, so the
-  # devcontainer sets FREEAGENT_ALLOW_ANY_HOST=1 and Collie answers on whichever host GitHub used.
-  if [ "${FREEAGENT_ALLOW_ANY_HOST:-0}" = "1" ] || [ "${CODESPACES:-}" = "true" ]; then
-    export COLLIE_ALLOW_ANY_HOST=1
-    log "public host: also answering on any other host (codespace tunnel-id fallback address)"
-  fi
 elif [ "${FREEAGENT_ALLOW_ANY_HOST:-0}" = "1" ]; then
   export COLLIE_ALLOW_ANY_HOST=1
   log "public host: unknown — COLLIE_ALLOW_ANY_HOST=1 (FREEAGENT_ALLOW_ANY_HOST=1 was set)"
