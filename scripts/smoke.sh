@@ -42,9 +42,18 @@ echo "== herdr integrations were installed at build time"
 docker run --rm "$IMAGE" bash -c 'test -f ~/.claude/settings.json && grep -q herdr ~/.claude/settings.json' || fail "claude hooks not installed"
 echo "OK"
 
+echo "== the claude shim replaced npm's link and still reaches the real CLI"
+docker run --rm "$IMAGE" bash -c 'grep -q CLAUDE_CODE_OAUTH_TOKEN /usr/local/bin/claude && test "$(basename /usr/local/libexec/freeagent/claude)" = claude && claude --version' || fail "claude shim missing or broken"
+echo "OK"
+
+# Stand-ins for the saved-account secrets GitHub injects into a codespace (never real credentials).
+FAKE_CLAUDE="sk-ant-oat01-ci-fake-token-0123456789abcdef"
+FAKE_CODEX=$(printf '{"auth_mode":"chatgpt","tokens":{"refresh_token":"ci-fake"},"last_refresh":"2026-01-01T00:00:00Z"}' | base64 | tr -d '\n')
+
 echo "== boots with the token and serves the API and the PWA"
 docker run -d --name "$NAME" -p "$PORT:7860" \
-  -e FREEAGENT_ALLOW_ANY_HOST=1 -e COLLIE_AUTH_TOKEN="$TOKEN" -e FREEAGENT_REPO=polats/opencode-cloud "$IMAGE" >/dev/null
+  -e FREEAGENT_ALLOW_ANY_HOST=1 -e COLLIE_AUTH_TOKEN="$TOKEN" -e FREEAGENT_REPO=polats/opencode-cloud \
+  -e FREEAGENT_CLAUDE_TOKEN="$FAKE_CLAUDE" -e FREEAGENT_CODEX_AUTH="$FAKE_CODEX" "$IMAGE" >/dev/null
 AUTH="Authorization: Bearer $TOKEN"
 
 code=""
@@ -77,6 +86,18 @@ echo "OK: PWA served on /"
 
 echo "== herdr answers on its socket inside the container"
 docker exec "$NAME" bash -c 'source /tmp/freeagent.env && herdr api snapshot' >/dev/null || fail "herdr api snapshot failed"
+echo "OK"
+
+echo "== saved accounts were restored into files, and dropped from the servers' environment"
+docker exec "$NAME" bash -c 'source /tmp/freeagent.env
+  test "$(cat "$FREEAGENT_ACCOUNTS_DIR/claude-token")" = "'"$FAKE_CLAUDE"'" &&
+  test "$(stat -c %a "$FREEAGENT_ACCOUNTS_DIR/claude-token")" = 600 &&
+  jq -e ".tokens.refresh_token == \"ci-fake\"" "$CODEX_HOME/auth.json" >/dev/null &&
+  test "$(stat -c %a "$CODEX_HOME/auth.json")" = 600' || fail "saved accounts were not restored as 0600 files"
+for proc in "herdr server" "bun run bridge"; do
+  docker exec "$NAME" bash -c "pid=\$(pgrep -f '$proc' | head -1); ! tr '\\0' '\\n' < /proc/\$pid/environ | grep -q '^FREEAGENT_\\(CLAUDE_TOKEN\\|CODEX_AUTH\\)='" \
+    || fail "$proc still has a saved-account secret in its environment"
+done
 echo "OK"
 
 echo "== a launcher row opens a pane"

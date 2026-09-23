@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# The user's agent accounts (Claude, ChatGPT/Codex), saved once and signed in on every new box.
+#
+#   freeagent-accounts restore          from entrypoint.sh, before herdr starts: turn the saved
+#                                       accounts in the environment into files for this box
+#   freeagent-accounts connect <agent>  from a pane (Collie's /api/accounts/connect types
+#                                       `freeagent-connect <agent>`): run the agent's own sign-in,
+#                                       sign this box in, and leave the result for the browser to save
+#
+# Where an account is saved: a GitHub Codespaces user secret, scoped to this repository, which
+# GitHub injects into every new codespace. The save is done by the browser (Collie's page) with the
+# user's GitHub token held in memory there; that token never reaches this box. What the box hands
+# the browser is one file per agent under $FREEAGENT_ACCOUNTS_DIR/pending/, taken once by Collie.
+#
+#   secret                   holds                               lands on the box as
+#   FREEAGENT_CLAUDE_TOKEN   `claude setup-token` (1 year,        $FREEAGENT_ACCOUNTS_DIR/claude-token,
+#                            scope user:inference)                 read by the `claude` shim only
+#   FREEAGENT_CODEX_AUTH     base64 of Codex's auth.json          $CODEX_HOME/auth.json
+set -euo pipefail
+
+[ -f /tmp/freeagent.env ] && source /tmp/freeagent.env
+# entrypoint.sh decides where accounts live (the state root when it is writable) and exports it.
+ACCOUNTS="${FREEAGENT_ACCOUNTS_DIR:-$HOME/.local/state/freeagent/accounts}"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+
+log() { echo "[freeagent] $*"; }
+
+# Write stdin to a file readable by this user only, atomically, so a reader never sees half of it.
+write_private() {
+  local dest="$1" tmp
+  mkdir -p "$(dirname "$dest")"
+  tmp="$(mktemp "$dest.XXXXXX")"
+  chmod 600 "$tmp"
+  cat > "$tmp"
+  mv -f "$tmp" "$dest"
+}
+
+fingerprint() { sha256sum | cut -c1-16; }
+
+restore() {
+  mkdir -p "$ACCOUNTS"; chmod 700 "$ACCOUNTS"
+
+  if [ -n "${FREEAGENT_CLAUDE_TOKEN:-}" ]; then
+    printf '%s' "$FREEAGENT_CLAUDE_TOKEN" | tr -d '\r\n' | write_private "$ACCOUNTS/claude-token"
+    log "accounts: Claude restored from your saved account"
+  fi
+
+  if [ -n "${FREEAGENT_CODEX_AUTH:-}" ]; then
+    # Codex refreshes its own file and a refreshed file must win over the saved copy, so the saved
+    # account is written only on a box that has none yet, or when the saved account CHANGED (the
+    # user connected again, perhaps as someone else) since this box last restored it.
+    local seen="$ACCOUNTS/codex-restored" now
+    now="$(printf '%s' "$FREEAGENT_CODEX_AUTH" | fingerprint)"
+    if [ ! -s "$CODEX_HOME/auth.json" ] || [ "$(cat "$seen" 2>/dev/null)" != "$now" ]; then
+      if printf '%s' "$FREEAGENT_CODEX_AUTH" | base64 -d 2>/dev/null | jq -e '.tokens.refresh_token' >/dev/null 2>&1; then
+        printf '%s' "$FREEAGENT_CODEX_AUTH" | base64 -d | write_private "$CODEX_HOME/auth.json"
+        printf '%s' "$now" > "$seen"
+        log "accounts: Codex restored from your saved account"
+      else
+        log "accounts: warning — FREEAGENT_CODEX_AUTH is not a Codex sign-in; ignored"
+      fi
+    fi
+  fi
+}
+
+# Leave {secret, value} for Collie to hand to the browser, once.
+leave_for_browser() {
+  local agent="$1" secret="$2" value="$3"
+  jq -n --arg s "$secret" --arg v "$value" '{secret:$s, value:$v}' | write_private "$ACCOUNTS/pending/$agent.json"
+}
+
+# Clear the screen AND the scrollback, so a token printed by a sign-in does not stay on the pane.
+wipe_screen() { printf '\033[H\033[2J\033[3J'; }
+
+connect() {
+  local agent="${1:-}"
+  mkdir -p "$ACCOUNTS/pending"; chmod 700 "$ACCOUNTS" "$ACCOUNTS/pending"
+  case "$agent" in
+    claude)
+      echo "Sign in to Claude once. The token it makes signs in every new box for a year."
+      echo
+      local log_file; log_file="$(mktemp)"; chmod 600 "$log_file"
+      # `script` keeps a real terminal for the sign-in and records what it prints. The recorded
+      # terminal is made very wide so the token is printed on one line, not wrapped.
+      script -qfc "stty cols 1000 2>/dev/null; claude setup-token" "$log_file" || true
+      local token
+      token="$(sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$log_file" | grep -oE 'sk-ant-oat[0-9]{2}-[A-Za-z0-9_-]{20,}' | tail -1 || true)"
+      shred -u "$log_file" 2>/dev/null || rm -f "$log_file"
+      wipe_screen
+      if [ -z "$token" ]; then
+        echo "No token came back from Claude. Run this again to retry: freeagent-connect claude"
+        exit 1
+      fi
+      printf '%s' "$token" | write_private "$ACCOUNTS/claude-token"
+      leave_for_browser claude FREEAGENT_CLAUDE_TOKEN "$token"
+      echo "Claude is signed in on this box."
+      ;;
+    codex)
+      echo "Sign in to ChatGPT once. Every new box will start signed in to Codex."
+      echo
+      codex login --device-auth
+      [ -s "$CODEX_HOME/auth.json" ] || { echo "Codex did not save a sign-in. Run this again to retry: freeagent-connect codex"; exit 1; }
+      leave_for_browser codex FREEAGENT_CODEX_AUTH "$(base64 -w0 < "$CODEX_HOME/auth.json")"
+      echo
+      echo "Codex is signed in on this box."
+      ;;
+    *)
+      echo "usage: freeagent-connect claude|codex" >&2; exit 2 ;;
+  esac
+  echo "Keep Collie open for a moment: it saves this to your GitHub account so new boxes start signed in."
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  restore) restore ;;
+  connect) connect "$@" ;;
+  *) echo "usage: freeagent-accounts restore | connect claude|codex" >&2; exit 2 ;;
+esac

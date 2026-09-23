@@ -146,6 +146,12 @@ if [ ! -f "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml" ]; then
   sed "s#__WORKSPACE__#$WORKSPACE#g" /opt/freeagent/config/launchers.toml > "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml"
 fi
 export FREEAGENT_WORKSPACE="$WORKSPACE" FREEAGENT_STATE_ROOT="$STATE_ROOT"
+# Where saved agent accounts land on this box (freeagent-accounts, the `claude` shim, Collie).
+if [ -d "$STATE_ROOT" ] && [ -w "$STATE_ROOT" ]; then
+  export FREEAGENT_ACCOUNTS_DIR="$STATE_ROOT/accounts"
+else
+  export FREEAGENT_ACCOUNTS_DIR="$XDG_STATE_HOME/freeagent/accounts"
+fi
 
 # --- herdr agent integrations -------------------------------------------------------------
 # Installed at build time under $HOME, but the OpenCode plugin lives under the XDG config dir,
@@ -181,13 +187,21 @@ done
 # Claude Pro/Max) all have one. Collie autolinks the URL the agent prints, so it is one tap on
 # the phone, and the resulting credentials persist under the state root above. API keys still
 # work when set, for CI and for users who prefer them.
+# Saved accounts (freeagent-accounts): the user connected Claude or ChatGPT once and GitHub injects
+# the result into every new codespace as a user secret. Turn those into this box's files, then drop
+# them from the environment so herdr, Collie and every pane never inherit them — the `claude` shim
+# hands Claude its token per process. Codespaces also keeps its own copy of every user secret in
+# /workspaces/.codespaces/shared/user-secrets-envs.json; that file is outside our control.
+freeagent-accounts restore || log "warning: could not restore saved accounts — sign in inside the agent instead"
+unset FREEAGENT_CLAUDE_TOKEN FREEAGENT_CODEX_AUTH
+
 have_cred=0
 for v in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY OPENCODE_API_KEY GEMINI_API_KEY; do
   if [ -n "${!v:-}" ]; then have_cred=1; log "credentials: $v set (API key mode)"; fi
 done
 if [ "$have_cred" = 0 ]; then
   signed=""
-  [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ] && signed="$signed claude"
+  { [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ] || [ -s "$FREEAGENT_ACCOUNTS_DIR/claude-token" ]; } && signed="$signed claude"
   [ -f "$CODEX_HOME/auth.json" ] && signed="$signed codex"
   [ -f "$XDG_DATA_HOME/opencode/auth.json" ] && signed="$signed opencode"
   if [ -n "$signed" ]; then
@@ -243,6 +257,14 @@ fi
 export COLLIE_CHECKOUT_COMMAND="freeagent-clone"
 export COLLIE_CHECKOUT_CWD="$WORKSPACE"
 export COLLIE_CHECKOUT_TOKEN_FILE="$STATE_ROOT/github-token"
+
+# --- agent accounts ----------------------------------------------------------------------------
+# Collie's /api/accounts/* routes: connect types `freeagent-connect <agent>` into a pane; the result
+# waits in accounts/pending/ until the browser takes it and saves it to the user's GitHub account,
+# as a Codespaces secret scoped to the repository this box was created from.
+export COLLIE_CONNECT_COMMAND="freeagent-connect"
+export COLLIE_ACCOUNTS_DIR="$FREEAGENT_ACCOUNTS_DIR"
+export COLLIE_ACCOUNTS_REPO="${GITHUB_REPOSITORY:-}"
 if [ -n "${FREEAGENT_REPO:-}" ]; then
   if freeagent-clone --boot "$FREEAGENT_REPO"; then log "repo: $FREEAGENT_REPO checked out"; else log "warning: could not clone $FREEAGENT_REPO (private? set GITHUB_TOKEN) — continuing"; fi
 fi
@@ -260,7 +282,7 @@ export COLLIE_TRUSTED_USER_OPTIONAL=1
 {
   for v in HERDR_SOCKET_PATH XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME XDG_CACHE_HOME \
            COLLIE_STATE_DIR HERDR_PLUGIN_CONFIG_DIR COLLIE_MUX COLLIE_HOST COLLIE_PORT \
-           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST COLLIE_AUTH_TOKEN COLLIE_GITHUB_OWNER COLLIE_CHECKOUT_COMMAND COLLIE_CHECKOUT_CWD COLLIE_CHECKOUT_TOKEN_FILE FREEAGENT_WORKSPACE FREEAGENT_STATE_ROOT; do
+           COLLIE_SKIP_SERVE COLLIE_PUBLIC_HOSTS COLLIE_ALLOWED_ORIGINS COLLIE_PUBLIC_URL COLLIE_ALLOW_ANY_HOST COLLIE_AUTH_TOKEN COLLIE_GITHUB_OWNER COLLIE_CHECKOUT_COMMAND COLLIE_CHECKOUT_CWD COLLIE_CHECKOUT_TOKEN_FILE COLLIE_CONNECT_COMMAND COLLIE_ACCOUNTS_DIR COLLIE_ACCOUNTS_REPO FREEAGENT_ACCOUNTS_DIR CLAUDE_CONFIG_DIR CODEX_HOME FREEAGENT_WORKSPACE FREEAGENT_STATE_ROOT; do
     [ -n "${!v:-}" ] && printf 'export %s=%q\n' "$v" "${!v}"
   done
 } > /tmp/freeagent.env

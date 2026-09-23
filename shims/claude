@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# `claude`, signed in with the user's saved Claude account when this box has one.
+#
+# Installed over /usr/local/bin/claude; the real CLI is linked at /usr/local/libexec/freeagent/claude
+# (still named `claude`, so herdr recognises the process). The saved token (freeagent-accounts
+# restore or connect) is handed to the claude process alone as CLAUDE_CODE_OAUTH_TOKEN, instead of
+# sitting in the environment of every pane. A sign-in done on this box itself (/login →
+# .credentials.json), an API key, or a token already in the environment all win over it.
+real=/usr/local/libexec/freeagent/claude
+token_file="${FREEAGENT_ACCOUNTS_DIR:-$HOME/.local/state/freeagent/accounts}/claude-token"
+if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -s "$token_file" ] \
+   && [ ! -s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json" ]; then
+  CLAUDE_CODE_OAUTH_TOKEN="$(cat "$token_file")"
+  export CLAUDE_CODE_OAUTH_TOKEN
+fi
+exec "$real" "$@"

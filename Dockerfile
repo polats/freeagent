@@ -95,7 +95,7 @@ RUN set -eu; \
 # docs/deployment.md → Variant F). Pinned to a tag, never the moving `cloud` branch, so a rebase of
 # the fork reaches new boxes only when this line changes.
 ARG COLLIE_REPO=https://github.com/polats/collie.git
-ARG COLLIE_REF=cloud-v1.12.1
+ARG COLLIE_REF=cloud-v1.12.1-accounts
 RUN git clone --depth 1 --branch "${COLLIE_REF}" "${COLLIE_REPO}" /opt/collie \
     && cd /opt/collie \
     && bun install --frozen-lockfile \
@@ -117,9 +117,18 @@ COPY --chown=node:node entrypoint.sh /home/node/entrypoint.sh
 COPY --chown=node:node config/ /opt/freeagent/config/
 COPY --chown=node:node bin/ /opt/freeagent/bin/
 COPY --chown=node:node template/ /opt/freeagent/template/
+# The `claude` shim (root-owned, like the CLI it wraps) replaces npm's link; the real CLI stays
+# reachable under a path whose last component is still `claude`, which is how herdr knows it.
+COPY shims/claude /opt/freeagent/shims/claude
 RUN chmod +x /home/node/entrypoint.sh /opt/freeagent/bin/* \
     && ln -s /opt/freeagent/bin/freeagent-pair /usr/local/bin/freeagent-pair \
     && ln -s /opt/freeagent/bin/freeagent-clone /usr/local/bin/freeagent-clone \
+    && ln -s /opt/freeagent/bin/freeagent-accounts /usr/local/bin/freeagent-accounts \
+    && ln -s /opt/freeagent/bin/freeagent-connect /usr/local/bin/freeagent-connect \
+    && mkdir -p /usr/local/libexec/freeagent \
+    && ln -s "$(readlink -f /usr/local/bin/claude)" /usr/local/libexec/freeagent/claude \
+    && install -m 755 /opt/freeagent/shims/claude /usr/local/bin/claude \
+    && claude --version \
     && mkdir -p /home/node/workspace \
     && chown -R node:node /home/node /opt/collie
 
