@@ -338,7 +338,7 @@ async function codespaceRouting(b) {
 // blocker that refuses even that (window.open answers null) falls back to navigating this tab.
 // An HF box gets its Collie token in the fragment on every open — the PWA ignores it while its
 // device token is still good, and re-pairs with it when the box has forgotten the phone.
-async function connect(b) {
+async function connect(b, extra = {}) {
   const tab = window.open("about:blank", "_blank");
   if (tab) tab.opener = null;
   const open = (url) => { if (tab && !tab.closed) tab.location.replace(url); else location.assign(url); };
@@ -356,7 +356,7 @@ async function connect(b) {
     }
   }
   setBusy(b.id, null);
-  open(handoffUrl(b));
+  open(handoffUrl(b, extra));
 }
 
 // Start a stopped codespace and wait until Herdr and Collie are up on it. An HF box wakes itself
@@ -383,8 +383,8 @@ async function wake(b) {
 // has it (boxes created before owners existed, or a box whose owner variable is missing) as the
 // fallback the PWA tries second. A codespace gets its repo to clone, plus the GitHub token when that
 // repo is private. An HF box clones at boot from FREEAGENT_REPO, so it gets no repo here.
-function handoffUrl(b) {
-  const frag = new URLSearchParams();
+function handoffUrl(b, extra = {}) {
+  const frag = new URLSearchParams(extra);
   if (b.p === "hf") {
     if (tokenOf("github")) frag.set("gh", tokenOf("github"));
     if (b.token) frag.set("token", b.token);
@@ -575,6 +575,62 @@ function renderAccounts() {
   $("avatar-initial").textContent = (user.github ?? "?").slice(0, 1);
 }
 
+// ---- Agent accounts ---------------------------------------------------------------------------------------------
+// Claude and ChatGPT, signed in once and then on every new box. The sign-in runs in the agent's own
+// CLI on a box (Anthropic and OpenAI offer no sign-in a page like this can use for a subscription),
+// and the box's Collie saves the result to the user's GitHub as a Codespaces secret scoped to the
+// template repository, which GitHub injects into every new codespace. This page only ever sees the
+// secret NAMES (GitHub never returns values), so "connected" is a name being there.
+const AGENT_SECRETS = { claude: "FREEAGENT_CLAUDE_TOKEN", codex: "FREEAGENT_CODEX_AUTH" };
+const AGENT_REVOKE = {
+  claude: "To end it everywhere, also revoke the token in your Claude account settings.",
+  codex: "To end it everywhere, also sign out of the Codex device in your ChatGPT security settings.",
+};
+let agentSecrets = null; // Set of saved secret names; null until read (or unreadable)
+
+async function loadAgentSecrets() {
+  try {
+    const { secrets = [] } = await api("github", "/user/codespaces/secrets?per_page=100");
+    agentSecrets = new Set(secrets.map((x) => x.name));
+  } catch {
+    agentSecrets = null;
+  }
+}
+
+function renderAgentAccounts() {
+  const show = Boolean(user.github) && agentSecrets !== null;
+  $("agents-note").hidden = !show;
+  for (const agent of Object.keys(AGENT_SECRETS)) {
+    const on = show && agentSecrets.has(AGENT_SECRETS[agent]);
+    $(`acct-agent-${agent}`).hidden = !show;
+    $(`acct-agent-${agent}-sub`).textContent = on ? "Connected — new boxes start signed in" : "Not connected";
+    $(`acct-agent-${agent}-connect`).hidden = on;
+    $(`acct-agent-${agent}-disconnect`).hidden = !on;
+  }
+}
+
+// Connect = open a codespace box on that agent's sign-in, with the GitHub token the box's page saves
+// with. The newest running box is used; a stopped one is woken like any open.
+async function connectAgent(agent) {
+  const b = [...boxes].filter((x) => x.p === "github" && x.kind !== "pending")
+    .sort((x, y) => (y.kind === "running") - (x.kind === "running"))[0];
+  $("accounts").close();
+  if (!b) { toast("Create a box first: the sign-in runs on one."); openCreate(); return; }
+  try {
+    await connect(b, { gh: tokenOf("github"), connect: agent });
+  } catch (e) { showError(e.message); }
+}
+
+async function disconnectAgent(agent) {
+  $("accounts").close();
+  try {
+    await api("github", `/user/codespaces/secrets/${AGENT_SECRETS[agent]}`, { method: "DELETE" });
+    agentSecrets?.delete(AGENT_SECRETS[agent]);
+    toast(`Disconnected. New boxes won't be signed in; boxes you already have keep their sign-in. ${AGENT_REVOKE[agent]}`);
+  } catch (e) { toast(e.message); }
+  renderAgentAccounts();
+}
+
 // ---- Page -----------------------------------------------------------------------------------------------------------
 async function refresh() {
   showError("");
@@ -617,7 +673,11 @@ async function main() {
   $("create-name").oninput = () => { nameSuggested = false; };
   $("create-form").onsubmit = submitCreate;
   $("create-cancel").onclick = () => $("create").close();
-  $("accounts-open").onclick = () => { renderAccounts(); $("accounts").showModal(); };
+  $("accounts-open").onclick = async () => { renderAccounts(); renderAgentAccounts(); $("accounts").showModal(); await loadAgentSecrets(); renderAgentAccounts(); };
+  for (const agent of Object.keys(AGENT_SECRETS)) {
+    $(`acct-agent-${agent}-connect`).onclick = () => connectAgent(agent);
+    $(`acct-agent-${agent}-disconnect`).onclick = () => disconnectAgent(agent);
+  }
   $("accounts-close").onclick = () => $("accounts").close();
   $("acct-github-connect").onclick = () => signIn("github");
   $("acct-hf-connect").onclick = () => signIn("hf");
