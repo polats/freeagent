@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Sign in to an agent once and save it to the user's account (see freeagent-accounts).
+# Collie's /api/accounts/connect types exactly `freeagent-connect <agent>` into a new pane.
+exec freeagent-accounts connect "$@"
