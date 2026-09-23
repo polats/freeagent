@@ -91,10 +91,11 @@ RUN set -eu; \
 # A tagged checkout with the web bundle prebuilt. The bridge serves web/dist from disk and has no
 # npm runtime dependencies beyond the optional `web-push`, so the root install is tiny; the web
 # tree's devDependencies are only needed for `vite build` and are removed afterwards.
-# Built from the polats fork's `cloud` branch: upstream Collie plus cloud auth (COLLIE_AUTH_TOKEN,
-# docs/deployment.md → Variant F). Pin a tag here once the fork cuts one.
+# Built from the polats fork: upstream Collie plus cloud auth (COLLIE_AUTH_TOKEN,
+# docs/deployment.md → Variant F). Pinned to a tag, never the moving `cloud` branch, so a rebase of
+# the fork reaches new boxes only when this line changes.
 ARG COLLIE_REPO=https://github.com/polats/collie.git
-ARG COLLIE_REF=cloud
+ARG COLLIE_REF=cloud-v1.8.2
 RUN git clone --depth 1 --branch "${COLLIE_REF}" "${COLLIE_REPO}" /opt/collie \
     && cd /opt/collie \
     && bun install --frozen-lockfile \
