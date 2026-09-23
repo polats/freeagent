@@ -95,7 +95,7 @@ RUN set -eu; \
 # docs/deployment.md → Variant F). Pinned to a tag, never the moving `cloud` branch, so a rebase of
 # the fork reaches new boxes only when this line changes.
 ARG COLLIE_REPO=https://github.com/polats/collie.git
-ARG COLLIE_REF=cloud-v1.12.1-rc.1
+ARG COLLIE_REF=cloud-v1.12.1
 RUN git clone --depth 1 --branch "${COLLIE_REF}" "${COLLIE_REPO}" /opt/collie \
     && cd /opt/collie \
     && bun install --frozen-lockfile \
