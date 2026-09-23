@@ -19,8 +19,10 @@ const PROVIDERS = ["github", "hf"]; // fixed order, like the app's Accounts scre
 const LINKED = PROVIDERS.filter((p) => p !== MAIN); // the accounts that ride with the GitHub one
 const API = { github: "https://api.github.com", hf: "https://huggingface.co" };
 const LABEL = { github: "GitHub", hf: "Hugging Face", railway: "Railway" };
-const SCOPE = { github: "codespace repo", hf: "openid profile manage-repos" };
-const SCOPE_TAG = { github: "v2", hf: "v1", railway: "v1" }; // bump when a scope changes so older tokens are dropped
+// `workflow` lets the page write the agent sign-in job into the user's own freeagent-account repo
+// (GitHub refuses any write under .github/workflows without it).
+const SCOPE = { github: "codespace repo workflow", hf: "openid profile manage-repos" };
+const SCOPE_TAG = { github: "v3", hf: "v1", railway: "v1" }; // bump when a scope changes so older tokens are dropped
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -609,9 +611,16 @@ function renderAgentAccounts() {
   }
 }
 
-// Connect = open a codespace box on that agent's sign-in, with the GitHub token the box's page saves
-// with. The newest running box is used; a stopped one is woken like any open.
-async function connectAgent(agent) {
+// Connect: ChatGPT signs in on a GitHub runner in the user's own account (no box needed, see
+// "Connect on a runner" below). Claude still signs in on a box until its runner job exists.
+function connectAgent(agent) {
+  if (RUNNER_AGENTS[agent]) return connectViaRunner(agent);
+  return connectOnBox(agent);
+}
+
+// Connect on a box = open a codespace box on that agent's sign-in, with the GitHub token the box's
+// page saves with. The newest running box is used; a stopped one is woken like any open.
+async function connectOnBox(agent) {
   const b = [...boxes].filter((x) => x.p === "github" && x.kind !== "pending")
     .sort((x, y) => (y.kind === "running") - (x.kind === "running"))[0];
   $("accounts").close();
@@ -629,6 +638,177 @@ async function disconnectAgent(agent) {
     toast(`Disconnected. New boxes won't be signed in; boxes you already have keep their sign-in. ${AGENT_REVOKE[agent]}`);
   } catch (e) { toast(e.message); }
   renderAgentAccounts();
+}
+
+// ---- Connect on a runner ------------------------------------------------------------------------------------
+// The sign-in runs in the agent's own CLI on a GitHub Actions runner in the user's OWN private
+// freeagent-account repository, so no box is needed. The page writes the job there (connect-workflow.yml,
+// versioned by its first line), dispatches it with a one-time public key, shows the device code the
+// job commits, and opens the result the job commits sealed to that key. Only this page holds the
+// private half. The result is re-sealed to GitHub's key and saved as the Codespaces secret, and both
+// files are deleted. The GitHub token never leaves this page; nothing of ours is in the middle.
+const RUNNER_AGENTS = {
+  codex: { title: "Connect ChatGPT", site: "OpenAI", secret: "FREEAGENT_CODEX_AUTH", done: "ChatGPT connected. New boxes start signed in to Codex." },
+};
+const CONNECT_WORKFLOW = ".github/workflows/freeagent-connect.yml";
+const CONNECT_WINDOW_MS = 20 * 60 * 1000;
+const connectRepo = () => `/repos/${user.github}/${STORE_REPO}`;
+let connectJob = null;
+
+function utf8ToB64(text) {
+  let bin = "";
+  for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+function b64ToUtf8(b64) {
+  return new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\n/g, "")), (c) => c.charCodeAt(0)));
+}
+const randomHex = (bytes) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+/** Write the sign-in job into the account repo when it is missing or an older version. */
+async function ensureConnectWorkflow() {
+  const res = await fetch("connect-workflow.yml", { cache: "no-cache" });
+  if (!res.ok) throw new Error("Could not load the sign-in job. Reload the page and try again.");
+  const template = await res.text();
+  const version = template.split("\n")[0];
+  let sha = null;
+  try {
+    const f = await api("github", `${connectRepo()}/contents/${CONNECT_WORKFLOW}`);
+    if (b64ToUtf8(f.content).split("\n")[0] === version) return;
+    sha = f.sha;
+  } catch (e) { if (e.status !== 404) throw e; }
+  const put = () => api("github", `${connectRepo()}/contents/${CONNECT_WORKFLOW}`, { method: "PUT", body: JSON.stringify({ message: "freeagent: agent sign-in job", content: utf8ToB64(template), ...(sha ? { sha } : {}) }) });
+  try {
+    await put();
+  } catch (e) {
+    if (e.status !== 404) throw e.status === 403 ? new Error("GitHub refused to add the sign-in job. Sign out and sign in again to allow it.") : e;
+    await api("github", "/user/repos", { method: "POST", body: JSON.stringify({ name: STORE_REPO, private: true, description: "freeagent: connected accounts. Private. Do not share.", has_issues: false, has_wiki: false, has_projects: false, auto_init: false }) });
+    await put();
+  }
+}
+
+async function dispatchConnect(job) {
+  // A workflow file written a moment ago can take a few seconds to become dispatchable.
+  for (let i = 0; ; i += 1) {
+    try {
+      await api("github", `${connectRepo()}/actions/workflows/freeagent-connect.yml/dispatches`, { method: "POST", body: JSON.stringify({ ref: "main", inputs: { agent: job.agent, request: job.req, pubkey: job.kp.publicKey } }) });
+      return;
+    } catch (e) {
+      if (i >= 10 || (e.status !== 404 && e.status !== 422)) throw e;
+      await sleep(3000);
+    }
+  }
+}
+
+async function findConnectRun(req) {
+  const { workflow_runs: runs = [] } = await api("github", `${connectRepo()}/actions/runs?event=workflow_dispatch&per_page=10`);
+  return runs.find((r) => (r.display_title ?? "").includes(req))?.id ?? null;
+}
+
+async function readConnectFile(req, name) {
+  try {
+    const f = await api("github", `${connectRepo()}/contents/connect/${req}/${name}`);
+    return JSON.parse(b64ToUtf8(f.content));
+  } catch (e) {
+    if (e.status === 404) return null;
+    throw e;
+  }
+}
+
+async function cleanupConnect(req) {
+  for (const name of ["code.json", "result.json"]) {
+    try {
+      const f = await api("github", `${connectRepo()}/contents/connect/${req}/${name}`);
+      await api("github", `${connectRepo()}/contents/connect/${req}/${name}`, { method: "DELETE", body: JSON.stringify({ message: "freeagent connect: clean up", sha: f.sha }) });
+    } catch { /* already gone */ }
+  }
+}
+
+/** Save one Codespaces user secret, sealed to the user's key and scoped to the template repository. */
+async function saveCodespacesSecret(name, value) {
+  const repo = await api("github", `/repos/${CFG.TEMPLATE_REPO}`);
+  const key = await api("github", "/user/codespaces/secrets/public-key");
+  await api("github", `/user/codespaces/secrets/${name}`, { method: "PUT", body: JSON.stringify({ encrypted_value: window.FreeagentSeal.seal(key.key, value), key_id: key.key_id, selected_repository_ids: [repo.id] }) });
+}
+
+function showConnect(title, status) {
+  $("agent-connect-title").textContent = title;
+  $("agent-connect-status").textContent = status;
+  $("agent-connect-error").textContent = "";
+  $("agent-connect-code").hidden = true;
+  $("agent-connect-cancel").textContent = "Cancel";
+  if (!$("agent-connect").open) $("agent-connect").showModal();
+}
+const connectStatus = (text) => { $("agent-connect-status").textContent = text; };
+
+async function connectViaRunner(agent) {
+  const meta = RUNNER_AGENTS[agent];
+  $("accounts").close();
+  if (!window.FreeagentSeal) return toast("Reload the page and try again.");
+  const job = { agent, req: randomHex(12), kp: window.FreeagentSeal.keyPair(), runId: null, cancelled: false };
+  connectJob = job;
+  showConnect(meta.title, "Setting up the sign-in job in your private freeagent-account repository…");
+  try {
+    await ensureConnectWorkflow();
+    connectStatus("Starting a GitHub runner in your account. This takes about a minute…");
+    await dispatchConnect(job);
+    const until = Date.now() + CONNECT_WINDOW_MS;
+    let shown = false;
+    while (!job.cancelled) {
+      if (Date.now() > until) throw new Error("The sign-in timed out. Try again.");
+      if (job.runId === null) job.runId = await findConnectRun(job.req);
+      if (!shown) {
+        const code = await readConnectFile(job.req, "code.json");
+        if (code && !job.cancelled) {
+          shown = true;
+          $("agent-connect-code-value").textContent = code.code;
+          $("agent-connect-open").href = code.url;
+          $("agent-connect-open").textContent = `Open ${meta.site}`;
+          $("agent-connect-code").hidden = false;
+          connectStatus(`Open ${meta.site}, sign in, and enter this code. It works once, for 15 minutes.`);
+        }
+      }
+      const result = await readConnectFile(job.req, "result.json");
+      if (result && !job.cancelled) {
+        if (result.secret !== meta.secret) throw new Error("The sign-in job returned something unexpected. Try again.");
+        $("agent-connect-code").hidden = true;
+        connectStatus("Signed in. Saving to your GitHub account…");
+        const value = window.FreeagentSeal.open(result.sealed, job.kp);
+        if (value === null) throw new Error("The sign-in result could not be opened. Try again.");
+        await saveCodespacesSecret(result.secret, value);
+        agentSecrets?.add(result.secret);
+        await cleanupConnect(job.req);
+        $("agent-connect").close();
+        toast(meta.done);
+        renderAgentAccounts();
+        return;
+      }
+      if (job.runId !== null) {
+        const run = await api("github", `${connectRepo()}/actions/runs/${job.runId}`);
+        if (run.status === "completed" && run.conclusion !== "success") {
+          throw new Error(run.conclusion === "cancelled" ? "The sign-in was cancelled." : "The sign-in job stopped before it finished. Try again.");
+        }
+      }
+      await sleep(3000);
+    }
+  } catch (e) {
+    if (job.cancelled) return;
+    $("agent-connect-code").hidden = true;
+    $("agent-connect-error").textContent = e.message;
+    $("agent-connect-cancel").textContent = "Close";
+    cleanupConnect(job.req).catch(() => {});
+  } finally {
+    if (connectJob === job) connectJob = null;
+  }
+}
+
+async function cancelConnect() {
+  const job = connectJob;
+  $("agent-connect").close();
+  if (!job) return;
+  job.cancelled = true;
+  if (job.runId !== null) await api("github", `${connectRepo()}/actions/runs/${job.runId}/cancel`, { method: "POST" }).catch(() => {});
+  await cleanupConnect(job.req);
 }
 
 // ---- Page -----------------------------------------------------------------------------------------------------------
@@ -674,6 +854,8 @@ async function main() {
   $("create-form").onsubmit = submitCreate;
   $("create-cancel").onclick = () => $("create").close();
   $("accounts-open").onclick = async () => { renderAccounts(); renderAgentAccounts(); $("accounts").showModal(); await loadAgentSecrets(); renderAgentAccounts(); };
+  $("agent-connect-cancel").onclick = cancelConnect;
+  $("agent-connect-copy").onclick = () => navigator.clipboard?.writeText($("agent-connect-code-value").textContent).then(() => toast("Code copied"), () => {});
   for (const agent of Object.keys(AGENT_SECRETS)) {
     $(`acct-agent-${agent}-connect`).onclick = () => connectAgent(agent);
     $(`acct-agent-${agent}-disconnect`).onclick = () => disconnectAgent(agent);

@@ -1,0 +1,89 @@
+# freeagent-connect v1 — written into your private freeagent-account repository by the freeagent page.
+# Edits here are overwritten when the page ships a new version.
+#
+# Signs in to an agent once, on a GitHub runner in YOUR account, so the sign-in never needs a box:
+# the page dispatches this with a one-time public key; the job runs the agent's own CLI sign-in and
+# commits its device code for the page to show; when you approve, it commits the result sealed to
+# that key (a libsodium sealed box). Only the page that dispatched it holds the private half. The
+# page opens it, saves it to your GitHub as a Codespaces secret, and deletes both files.
+name: freeagent connect
+run-name: freeagent connect ${{ inputs.agent }} ${{ inputs.request }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: Agent to sign in to
+        required: true
+        type: choice
+        options: [codex]
+      request:
+        description: Request id (chosen by the page)
+        required: true
+        type: string
+      pubkey:
+        description: One-time public key (base64, X25519)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: freeagent-connect
+  cancel-in-progress: true
+
+jobs:
+  connect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REQ: ${{ inputs.request }}
+      PUBKEY: ${{ inputs.pubkey }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Check the request
+        run: |
+          [[ "$REQ" =~ ^[A-Za-z0-9_-]{16,64}$ ]] || { echo "bad request id"; exit 1; }
+          [[ "$PUBKEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "bad public key"; exit 1; }
+
+      - name: Install the CLI
+        run: |
+          npm install -g --silent @openai/codex@0.156.1
+          mkdir -p "$RUNNER_TEMP/seal" && cd "$RUNNER_TEMP/seal"
+          npm install --silent --no-save tweetnacl@1.0.3 blakejs@1.2.1
+          cat > seal.cjs <<'JS'
+          // crypto_box_seal(stdin, PUBKEY) → base64 on stdout: ephemeral key ‖ box, nonce = blake2b-192(epk ‖ pk).
+          const nacl = require("tweetnacl"); const { blake2b } = require("blakejs");
+          const pk = new Uint8Array(Buffer.from(process.env.PUBKEY, "base64"));
+          const msg = new Uint8Array(require("fs").readFileSync(0));
+          const e = nacl.box.keyPair();
+          const n = new Uint8Array(blake2b(new Uint8Array([...e.publicKey, ...pk]), undefined, 24));
+          process.stdout.write(Buffer.from([...e.publicKey, ...nacl.box(msg, n, pk, e.secretKey)]).toString("base64"));
+          JS
+
+      - name: Sign in
+        run: |
+          put() { gh api -X PUT "repos/$REPO/contents/connect/$REQ/$1" -f message="freeagent connect: $1" -f content="$(base64 -w0 "$2")" >/dev/null; }
+          export CODEX_HOME="$RUNNER_TEMP/codex"; mkdir -p "$CODEX_HOME"
+          codex login --device-auth > "$RUNNER_TEMP/login.out" 2>&1 < /dev/null &
+          pid=$!
+          code=""
+          for _ in $(seq 1 90); do
+            code=$(sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' "$RUNNER_TEMP/login.out" | grep -oE '\b[A-Z0-9]{4}-[A-Z0-9]{4,6}\b' | head -1 || true)
+            [ -n "$code" ] && break
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          if [ -z "$code" ]; then echo "Codex printed no device code"; exit 1; fi
+          jq -n --arg code "$code" '{agent:"codex", code:$code, url:"https://auth.openai.com/codex/device"}' > "$RUNNER_TEMP/code.json"
+          put code.json "$RUNNER_TEMP/code.json"
+          echo "Device code published. Waiting for you to approve it (15 minutes)."
+          wait "$pid" || { echo "Codex sign-in did not finish"; exit 1; }
+          test -s "$CODEX_HOME/auth.json" || { echo "Codex saved no sign-in"; exit 1; }
+          sealed=$(base64 -w0 "$CODEX_HOME/auth.json" | node "$RUNNER_TEMP/seal/seal.cjs")
+          jq -n --arg s "$sealed" '{agent:"codex", secret:"FREEAGENT_CODEX_AUTH", sealed:$s}' > "$RUNNER_TEMP/result.json"
+          put result.json "$RUNNER_TEMP/result.json"
+          rm -rf "$CODEX_HOME" "$RUNNER_TEMP/login.out"
+          echo "Signed in. The sealed result is waiting for the page."

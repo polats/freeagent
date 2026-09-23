@@ -31,8 +31,11 @@ optional: the page only offers the ones whose secrets are set.
    Authorization callback URL: your site's root URL with a trailing slash, e.g.
    `https://freeagent.example.com/`. Note the client id and generate a client secret. Optionally
    tick **Enable Device Flow**: the page then also offers "sign in with a code", which needs no
-   callback and no secret. The page asks for the `codespace` and `repo` scopes in one consent:
-   `repo` is what lists private repositories and lets a box clone them.
+   callback and no secret. The page asks for the `codespace`, `repo` and `workflow` scopes in one
+   consent: `repo` is what lists private repositories and lets a box clone them; `workflow` lets
+   the page write the agent sign-in job (`public/connect-workflow.yml`) into the user's own private
+   `freeagent-account` repository, where Connect ChatGPT runs Codex's sign-in on a GitHub runner
+   and the result is saved as a Codespaces secret, with no box needed.
 
 3. **Hugging Face OAuth app** — huggingface.co → Settings → Developer applications → New.
    Redirect URI: your site's root URL with a trailing slash, e.g. `https://freeagent.example.com/`.

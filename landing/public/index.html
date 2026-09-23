@@ -95,6 +95,19 @@
   <div class="actions"><button class="text" id="accounts-close">Close</button></div>
 </dialog>
 
+<!-- Connect an agent account (runs on a GitHub runner in the user's own account) -->
+<dialog class="sheet" id="agent-connect">
+  <div class="handle"></div>
+  <h2 id="agent-connect-title">Connect</h2>
+  <p id="agent-connect-status"></p>
+  <div id="agent-connect-code" hidden>
+    <div class="devcode" id="agent-connect-code-value"></div>
+    <div class="devcode-actions"><button class="outlined" id="agent-connect-copy">Copy code</button><a class="filled" id="agent-connect-open" target="_blank" rel="noopener">Open sign-in page</a></div>
+  </div>
+  <p class="error" id="agent-connect-error"></p>
+  <div class="actions"><button class="text" id="agent-connect-cancel">Cancel</button></div>
+</dialog>
+
 <!-- Box actions -->
 <dialog class="sheet" id="box-menu">
   <div class="handle"></div>
@@ -128,6 +141,7 @@
 <script src="stars.js?v=dev"></script>
 <script type="module" src="trails.js?v=dev"></script>
 <script src="config.js?v=dev"></script>
+<script src="vendor/seal.js?v=dev"></script>
 <script src="app.js?v=dev"></script>
 </body>
 </html>
