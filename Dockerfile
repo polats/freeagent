@@ -42,9 +42,9 @@ RUN ln -sf /usr/local/bin/bun /usr/local/bin/bunx && bun --version
 # Static musl binaries from GitHub releases; building from source needs libghostty-vt and a
 # vendored PTY crate, which is not worth it in an image. Checksums come from
 # herdr/distribution/latest.json for the pinned version. Bump all three together.
-ARG HERDR_VERSION=0.8.2
-ARG HERDR_SHA256_X86_64=976150a14d490c94b243ea2e1a7eb2dfb67f12e36b182db90936f6728e6aecf4
-ARG HERDR_SHA256_AARCH64=f55610658e1c2e0d2aaef730b4b2ab885f7f8ba00285ab372bfb14f2e3d5b40d
+ARG HERDR_VERSION=0.9.1
+ARG HERDR_SHA256_X86_64=2a02fed16beb651ef006e1d43f048f652ca4dc58ad053cd2d44450563d5c54b7
+ARG HERDR_SHA256_AARCH64=f4ccf4de745f2cb9a39a983e9ba3703dad50ec2a58dea83026ceab721bbd8d9e
 RUN set -eu; \
     case "$(dpkg --print-architecture)" in \
       amd64) arch=x86_64;  sum="$HERDR_SHA256_X86_64" ;; \
@@ -95,7 +95,7 @@ RUN set -eu; \
 # docs/deployment.md → Variant F). Pinned to a tag, never the moving `cloud` branch, so a rebase of
 # the fork reaches new boxes only when this line changes.
 ARG COLLIE_REPO=https://github.com/polats/collie.git
-ARG COLLIE_REF=cloud-v1.8.2
+ARG COLLIE_REF=cloud-v1.12.1-rc.1
 RUN git clone --depth 1 --branch "${COLLIE_REF}" "${COLLIE_REPO}" /opt/collie \
     && cd /opt/collie \
     && bun install --frozen-lockfile \
