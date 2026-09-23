@@ -145,6 +145,12 @@ git config --global --add safe.directory '*' 2>/dev/null || true
 if [ ! -f "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml" ]; then
   sed "s#__WORKSPACE__#$WORKSPACE#g" /opt/freeagent/config/launchers.toml > "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml"
 fi
+# Boxes seeded before freeagent-signin kept rows that start a sign-in directly, which wipes a saved
+# account; point those exact rows at the guard. Rows the operator wrote themselves are left alone.
+sed -i -e 's#^command = "claude auth login"$#command = "freeagent-signin claude"#' \
+       -e 's#^command = "codex login --device-auth"$#command = "freeagent-signin codex"#' \
+       -e 's#^command = "opencode auth login"$#command = "freeagent-signin opencode"#' \
+       "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml"
 export FREEAGENT_WORKSPACE="$WORKSPACE" FREEAGENT_STATE_ROOT="$STATE_ROOT"
 # Where saved agent accounts land on this box (freeagent-accounts, the `claude` shim, Collie).
 if [ -d "$STATE_ROOT" ] && [ -w "$STATE_ROOT" ]; then

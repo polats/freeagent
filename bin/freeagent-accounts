@@ -110,9 +110,38 @@ connect() {
   echo "Keep Collie open for a moment: it saves this to your GitHub account so new boxes start signed in."
 }
 
+# The launcher's "sign in" rows. Starting an agent's sign-in DISCARDS the sign-in it already has —
+# `codex login` deletes auth.json the moment it starts, even if the new sign-in is never finished —
+# so a tap on "Codex: sign in" used to wipe the account this box restored from the user's saved one.
+# Say so and stop instead; switching accounts is still one deliberate command away.
+signin() {
+  local agent="${1:-}"
+  case "$agent" in
+    codex)
+      if codex login status >/dev/null 2>&1 < /dev/null; then
+        echo "Codex is already signed in (your saved ChatGPT account). Nothing to do."
+        echo "To use a different account: codex logout && codex login --device-auth"
+        return 0
+      fi
+      exec codex login --device-auth ;;
+    claude)
+      if [ -s "$ACCOUNTS/claude-token" ] || [ -s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json" ]; then
+        echo "Claude is already signed in (your saved Claude account). Nothing to do."
+        echo "To use a different account: claude auth logout && claude auth login"
+        return 0
+      fi
+      exec claude auth login ;;
+    opencode)
+      exec opencode auth login ;;
+    *)
+      echo "usage: freeagent-signin claude|codex|opencode" >&2; exit 2 ;;
+  esac
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   restore) restore ;;
   connect) connect "$@" ;;
-  *) echo "usage: freeagent-accounts restore | connect claude|codex" >&2; exit 2 ;;
+  signin) signin "$@" ;;
+  *) echo "usage: freeagent-accounts restore | connect claude|codex | signin claude|codex|opencode" >&2; exit 2 ;;
 esac
