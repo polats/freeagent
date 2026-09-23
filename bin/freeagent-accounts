@@ -118,7 +118,9 @@ signin() {
   local agent="${1:-}"
   case "$agent" in
     codex)
-      if codex login status >/dev/null 2>&1 < /dev/null; then
+      # The file, not `codex login status`: a sign-in status cannot vouch for (expired, offline, an
+      # older format) is still one this must never delete. Signing out is the deliberate way.
+      if [ -s "$CODEX_HOME/auth.json" ]; then
         echo "Codex is already signed in (your saved ChatGPT account). Nothing to do."
         echo "To use a different account: codex logout && codex login --device-auth"
         return 0

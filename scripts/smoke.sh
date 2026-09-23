@@ -102,7 +102,7 @@ echo "OK"
 
 echo "== a sign-in row does not wipe a restored account, and the seeded rows go through the guard"
 docker exec "$NAME" bash -c 'source /tmp/freeagent.env
-  out=$(freeagent-signin codex </dev/null 2>&1); echo "$out" | grep -q "already signed in" &&
+  out=$(timeout 20 freeagent-signin codex </dev/null 2>&1); echo "$out" | grep -q "already signed in" &&
   test -s "$CODEX_HOME/auth.json" &&
   grep -q "^command = \"freeagent-signin codex\"$" "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml" &&
   ! grep -q "^command = \"codex login --device-auth\"$" "$HERDR_PLUGIN_CONFIG_DIR/launchers.toml"' || fail "sign-in guard missing or it wiped the restored Codex account"
