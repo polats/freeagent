@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Sign in to an agent from a launcher row, unless it is already signed in (see freeagent-accounts).
+exec freeagent-accounts signin "$@"

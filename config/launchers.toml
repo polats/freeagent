@@ -23,17 +23,18 @@ cwd = "__WORKSPACE__"
 
 # Sign-in rows. Each agent's no-browser fallback prints a URL (Collie makes it tappable) and takes
 # a pasted code back in the pane. Credentials persist under the state root, so this is a one-time
-# tap per agent per deployment.
+# tap per agent per deployment. Through freeagent-signin, which does nothing when the agent is
+# already signed in: starting a sign-in discards the current one (Codex deletes auth.json at once).
 [[launchers]]
-command = "claude auth login"
+command = "freeagent-signin claude"
 label = "Claude Code: sign in"
 
 [[launchers]]
-command = "codex login --device-auth"
+command = "freeagent-signin codex"
 label = "Codex: sign in"
 
 [[launchers]]
-command = "opencode auth login"
+command = "freeagent-signin opencode"
 label = "OpenCode: sign in"
 
 [[launchers]]

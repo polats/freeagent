@@ -125,6 +125,7 @@ RUN chmod +x /home/node/entrypoint.sh /opt/freeagent/bin/* \
     && ln -s /opt/freeagent/bin/freeagent-clone /usr/local/bin/freeagent-clone \
     && ln -s /opt/freeagent/bin/freeagent-accounts /usr/local/bin/freeagent-accounts \
     && ln -s /opt/freeagent/bin/freeagent-connect /usr/local/bin/freeagent-connect \
+    && ln -s /opt/freeagent/bin/freeagent-signin /usr/local/bin/freeagent-signin \
     && mkdir -p /usr/local/libexec/freeagent \
     && ln -s "$(readlink -f /usr/local/bin/claude)" /usr/local/libexec/freeagent/claude \
     && install -m 755 /opt/freeagent/shims/claude /usr/local/bin/claude \
